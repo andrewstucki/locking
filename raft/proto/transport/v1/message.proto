@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package transport.v1;
+
+message SendRequest {
+  bytes payload = 1;
+}
+
+message SendResponse {
+  bool applied = 1;
+}
+
+service TransportService {
+  rpc Send(SendRequest) returns (SendResponse);
+}
