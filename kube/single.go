@@ -14,11 +14,11 @@ type singleLock struct {
 }
 
 // newSingleResourceLock creates a new resource lock for use in a leader election loop.
-func newSingleResourceLock(id string, config LockConfiguration, o *options) (resourcelock.Interface, error) {
-	k8sConfig := rest.AddUserAgent(config.Config, "leader-election")
+func newSingleResourceLock(id string, config LockConfiguration, cnConfig ClusterNamespaceConfig) (resourcelock.Interface, error) {
+	k8sConfig := rest.AddUserAgent(cnConfig.Config, "leader-election")
 
-	if o.renewDeadline != 0 {
-		timeout := o.renewDeadline / 2
+	if config.RenewDeadline != 0 {
+		timeout := config.RenewDeadline / 2
 		if timeout < time.Second {
 			timeout = time.Second
 		}
@@ -34,17 +34,17 @@ func newSingleResourceLock(id string, config LockConfiguration, o *options) (res
 		Identity: id,
 	}
 
-	if o.recorderProvider != nil {
-		lockConfig.EventRecorder = o.recorderProvider.GetEventRecorderFor(id) //nolint:staticcheck
+	if config.RecorderProvider != nil {
+		lockConfig.EventRecorder = config.RecorderProvider.GetEventRecorderFor(id) //nolint:staticcheck
 	}
 
 	return &singleLock{LeaseLock: &resourcelock.LeaseLock{
 		LeaseMeta: metav1.ObjectMeta{
-			Namespace: config.Namespace,
+			Namespace: cnConfig.Namespace,
 			Name:      config.Name,
 		},
 		Client:     coordinationClient,
 		LockConfig: lockConfig,
-		Labels:     o.leaderLabels,
+		Labels:     config.LeaderLabels,
 	}}, nil
 }

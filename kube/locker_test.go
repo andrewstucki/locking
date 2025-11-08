@@ -20,24 +20,24 @@ import (
 
 func TestLocking(t *testing.T) {
 	for name, tt := range map[string]struct {
-		configs []LockConfiguration
+		config LockConfiguration
 	}{
 		"single lock": {
-			configs: []LockConfiguration{{
-				Name:      "single",
-				Namespace: "single",
-			}},
+			config: LockConfiguration{
+				Name: "single",
+				Configs: []ClusterNamespaceConfig{{
+					Namespace: "single",
+				}},
+			},
 		},
 		"multi lock": {
-			configs: []LockConfiguration{
-				{
-					Name:      "multi",
+			config: LockConfiguration{
+				Name: "multi",
+				Configs: []ClusterNamespaceConfig{{
 					Namespace: "namespace-1",
-				},
-				{
-					Name:      "multi",
+				}, {
 					Namespace: "namespace-2",
-				},
+				}},
 			},
 		},
 	} {
@@ -46,14 +46,14 @@ func TestLocking(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 				defer cancel()
 
-				for i := range tt.configs {
-					tt.configs[i].Config = runTestServer(t)
+				for i := range tt.config.Configs {
+					tt.config.Configs[i].Config = runTestServer(t)
 				}
 
-				leaderOne := setupLockTest(t, ctx, "one", tt.configs...)
+				leaderOne := setupLockTest(t, ctx, "one", tt.config)
 				leaderOne.WaitForLeader(t, 15*time.Second)
 
-				leaderTwo := setupLockTest(t, ctx, "two", tt.configs...)
+				leaderTwo := setupLockTest(t, ctx, "two", tt.config)
 				leaderTwo.WaitForFollower(t, 15*time.Second)
 
 				leaderOne.Stop()
@@ -80,14 +80,14 @@ func TestLocking(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				for i := range tt.configs {
-					tt.configs[i].Name = tt.configs[i].Name + "-random"
-					tt.configs[i].Config = runTestServer(t)
+				tt.config.Name = tt.config.Name + "-random"
+				for i := range tt.config.Configs {
+					tt.config.Configs[i].Config = runTestServer(t)
 				}
 
 				leaders := []*testLeader{}
 				for i := 0; i < int(n.Int64())+5; i++ {
-					leaders = append(leaders, setupLockTest(t, ctx, strconv.Itoa(i), tt.configs...))
+					leaders = append(leaders, setupLockTest(t, ctx, strconv.Itoa(i), tt.config))
 				}
 
 				var currentLeader *testLeader
@@ -327,20 +327,13 @@ func waitForAnyLeader(t *testing.T, timeout time.Duration, leaders ...*testLeade
 	}
 }
 
-func setupLockTest(t *testing.T, ctx context.Context, id string, configs ...LockConfiguration) *testLeader {
-	if len(configs) == 0 {
-		t.Fatalf("at least one lock configuration is required")
-	}
-
-	patched := make([]LockConfiguration, len(configs))
-	for i, config := range configs {
+func setupLockTest(t *testing.T, ctx context.Context, id string, config LockConfiguration) *testLeader {
+	config.ID = id
+	config.RenewDeadline = 1 * time.Second
+	config.LeaseDuration = 2 * time.Second
+	config.RetryPeriod = 10 * time.Millisecond
+	for _, config := range config.Configs {
 		ensureNamespace(t, config.Config, config.Namespace)
-		patched[i] = LockConfiguration{
-			ID:        id,
-			Config:    config.Config,
-			Name:      config.Name,
-			Namespace: config.Namespace,
-		}
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -351,29 +344,12 @@ func setupLockTest(t *testing.T, ctx context.Context, id string, configs ...Lock
 		OnStoppedLeading: leader.OnStoppedLeading,
 	}
 
-	if len(patched) == 1 {
-		go func() {
-			defer leader.Stop()
-			defer t.Log("leader election goroutine exiting")
+	go func() {
+		defer leader.Stop()
+		defer t.Log("leader election goroutine exiting")
 
-			leader.HandleError(RunSingle(ctx, patched[0], callbacks, defaultTestLockOptions()...))
-		}()
-	} else {
-		go func() {
-			defer leader.Stop()
-			defer t.Log("leader election goroutine exiting")
-
-			leader.HandleError(RunMulti(ctx, patched, callbacks, defaultTestLockOptions()...))
-		}()
-	}
+		leader.HandleError(Run(ctx, config, callbacks))
+	}()
 
 	return leader
-}
-
-func defaultTestLockOptions() []LockOptions {
-	return []LockOptions{
-		WithRenewDeadline(1 * time.Second),
-		WithLeaseDuration(2 * time.Second),
-		WithRetryPeriod(10 * time.Millisecond),
-	}
 }

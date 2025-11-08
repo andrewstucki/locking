@@ -15,94 +15,71 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/recorder"
 )
 
-type LockConfiguration struct {
-	ID        string
-	Name      string
+const (
+	defaultRenewDeadline = 15 * time.Second
+	defaultLeaseDuration = 30 * time.Second
+	defaultRetryPeriod   = 5 * time.Second
+)
+
+type ClusterNamespaceConfig struct {
 	Namespace string
 	Config    *rest.Config
 }
 
-func (lc *LockConfiguration) Validate() error {
+type LockConfiguration struct {
+	ID   string
+	Name string
+
+	Configs []ClusterNamespaceConfig
+
+	LeaderLabels     map[string]string
+	RenewDeadline    time.Duration
+	LeaseDuration    time.Duration
+	RetryPeriod      time.Duration
+	RecorderProvider recorder.Provider
+}
+
+func (lc *LockConfiguration) validate() error {
 	if lc.Name == "" {
 		return fmt.Errorf("lock name must be specified")
 	}
-	if lc.Namespace == "" {
-		return fmt.Errorf("lock namespace must be specified")
+
+	if len(lc.Configs) == 0 {
+		return fmt.Errorf("configurations must be specified")
 	}
-	if lc.Config == nil {
-		return fmt.Errorf("kube config must be specified")
+
+	for _, config := range lc.Configs {
+		if config.Namespace == "" {
+			return fmt.Errorf("all lock configs must specify namespace")
+		}
+		if config.Config == nil {
+			return fmt.Errorf("all lock configs must specify kube config")
+		}
 	}
+
+	if lc.RenewDeadline == 0 {
+		lc.RenewDeadline = defaultRenewDeadline
+	}
+
+	if lc.LeaseDuration == 0 {
+		lc.LeaseDuration = defaultLeaseDuration
+	}
+
+	if lc.RetryPeriod == 0 {
+		lc.RetryPeriod = defaultRetryPeriod
+	}
+
 	return nil
-}
-
-type LockOptions func(o *options)
-
-type options struct {
-	leaderLabels     map[string]string
-	renewDeadline    time.Duration
-	leaseDuration    time.Duration
-	retryPeriod      time.Duration
-	releaseOnCancel  bool
-	recorderProvider recorder.Provider
-}
-
-func WithLeaderLabels(labels map[string]string) LockOptions {
-	return func(o *options) {
-		o.leaderLabels = labels
-	}
-}
-
-func WithRenewDeadline(d time.Duration) LockOptions {
-	return func(o *options) {
-		o.renewDeadline = d
-	}
-}
-
-func WithLeaseDuration(d time.Duration) LockOptions {
-	return func(o *options) {
-		o.leaseDuration = d
-	}
-}
-
-func WithRetryPeriod(d time.Duration) LockOptions {
-	return func(o *options) {
-		o.retryPeriod = d
-	}
-}
-
-func WithReleaseOnCancel(release bool) LockOptions {
-	return func(o *options) {
-		o.releaseOnCancel = release
-	}
-}
-
-func WithRecorderProvider(provider recorder.Provider) LockOptions {
-	return func(o *options) {
-		o.recorderProvider = provider
-	}
-}
-
-func defaultOptions() *options {
-	return &options{
-		renewDeadline:   15 * time.Second,
-		leaseDuration:   30 * time.Second,
-		retryPeriod:     5 * time.Second,
-		releaseOnCancel: true,
-	}
 }
 
 type LeaderCallbacks struct {
 	OnStartedLeading func(ctx context.Context)
 	OnStoppedLeading func()
-
-	initialize atomic.Bool
-	isLeader   atomic.Bool
 }
 
-func RunSingle(ctx context.Context, config LockConfiguration, callbacks *LeaderCallbacks, opts ...LockOptions) error {
-	o := defaultOptions()
-	for _, opt := range opts {
-		opt(o)
+func Run(ctx context.Context, config LockConfiguration, callbacks *LeaderCallbacks) error {
+	if err := config.validate(); err != nil {
+		return err
 	}
 
 	id := config.ID
@@ -114,45 +91,21 @@ func RunSingle(ctx context.Context, config LockConfiguration, callbacks *LeaderC
 		id = id + "_" + string(uuid.NewUUID())
 	}
 
-	lock, err := newSingleResourceLock(id, config, o)
-	if err != nil {
-		return fmt.Errorf("could not create resource lock: %w", err)
-	}
-
-	elector, err := leaderElector(config.Name, lock, callbacks, o)
-	if err != nil {
-		return fmt.Errorf("could not create leader elector: %w", err)
-	}
-
-	elector.Run(ctx)
-	return nil
-}
-
-func RunMulti(ctx context.Context, configs []LockConfiguration, callbacks *LeaderCallbacks, opts ...LockOptions) error {
-	o := defaultOptions()
-	for _, opt := range opts {
-		opt(o)
-	}
-
-	if len(configs) < 2 {
-		return fmt.Errorf("at least two configurations are required to create a multi resource lock")
-	}
-
-	id := configs[0].ID
-	if id == "" {
-		id, err := os.Hostname()
+	var err error
+	var lock resourcelock.Interface
+	if len(config.Configs) == 1 {
+		lock, err = newSingleResourceLock(id, config, config.Configs[0])
 		if err != nil {
-			return err
+			return fmt.Errorf("could not create resource lock: %w", err)
 		}
-		id = id + "_" + string(uuid.NewUUID())
+	} else {
+		lock, err = newMultiResourceLock(id, config)
+		if err != nil {
+			return fmt.Errorf("could not create resource lock: %w", err)
+		}
 	}
 
-	lock, err := newMultiResourceLock(id, configs, o)
-	if err != nil {
-		return fmt.Errorf("could not create resource lock: %w", err)
-	}
-
-	elector, err := leaderElector(configs[0].Name, lock, callbacks, o)
+	elector, err := leaderElector(config.Name, lock, callbacks, config)
 	if err != nil {
 		return fmt.Errorf("could not create leader elector: %w", err)
 	}
@@ -161,37 +114,40 @@ func RunMulti(ctx context.Context, configs []LockConfiguration, callbacks *Leade
 	return nil
 }
 
-func leaderElector(name string, lock resourcelock.Interface, callbacks *LeaderCallbacks, o *options) (*leaderelection.LeaderElector, error) {
+func leaderElector(name string, lock resourcelock.Interface, callbacks *LeaderCallbacks, config LockConfiguration) (*leaderelection.LeaderElector, error) {
+	var initialized atomic.Bool
+	var isLeader atomic.Bool
+
 	leaderElector, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
 		Lock:          lock,
-		LeaseDuration: o.leaseDuration,
-		RenewDeadline: o.renewDeadline,
-		RetryPeriod:   o.retryPeriod,
+		LeaseDuration: config.LeaseDuration,
+		RenewDeadline: config.RenewDeadline,
+		RetryPeriod:   config.RetryPeriod,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				if callbacks != nil {
-					callbacks.initialize.Store(true)
-					if !callbacks.isLeader.Swap(true) && callbacks.OnStartedLeading != nil {
+					initialized.Store(true)
+					if !isLeader.Swap(true) && callbacks.OnStartedLeading != nil {
 						callbacks.OnStartedLeading(ctx)
 					}
 				}
 			},
 			OnStoppedLeading: func() {
 				if callbacks != nil {
-					if (!callbacks.initialize.Swap(true) || callbacks.isLeader.Swap(false)) && callbacks.OnStoppedLeading != nil {
+					if (!initialized.Swap(true) || isLeader.Swap(false)) && callbacks.OnStoppedLeading != nil {
 						callbacks.OnStoppedLeading()
 					}
 				}
 			},
 			OnNewLeader: func(_ string) {
 				if callbacks != nil {
-					if (!callbacks.initialize.Swap(true) || callbacks.isLeader.Swap(false)) && callbacks.OnStoppedLeading != nil {
+					if (!initialized.Swap(true) || isLeader.Swap(false)) && callbacks.OnStoppedLeading != nil {
 						callbacks.OnStoppedLeading()
 					}
 				}
 			},
 		},
-		ReleaseOnCancel: o.releaseOnCancel,
+		ReleaseOnCancel: true,
 		Name:            name,
 	})
 

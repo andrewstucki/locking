@@ -94,28 +94,21 @@ func (ml *multiLock) Identity() string {
 	return ml.primary.Identity()
 }
 
-func newMultiResourceLock(id string, configs []LockConfiguration, o *options) (resourcelock.Interface, error) {
-	if len(configs) < 2 {
+func newMultiResourceLock(id string, config LockConfiguration) (resourcelock.Interface, error) {
+	if len(config.Configs) < 2 {
 		return nil, fmt.Errorf("at least two configurations are required to create a multi resource lock")
 	}
 
-	name := configs[0].Name
-	for _, config := range configs[1:] {
-		if config.Name != name {
-			return nil, fmt.Errorf("all locks in a multi resource lock must have the same name")
-		}
-	}
-
-	secondaryLocks := make([]resourcelock.Interface, 0, len(configs)-1)
-	for _, config := range configs[1:] {
-		secondaryLock, err := newSingleResourceLock(id, config, o)
+	secondaryLocks := make([]resourcelock.Interface, 0, len(config.Configs)-1)
+	for _, cnConfig := range config.Configs[1:] {
+		secondaryLock, err := newSingleResourceLock(id, config, cnConfig)
 		if err != nil {
 			return nil, err
 		}
 		secondaryLocks = append(secondaryLocks, secondaryLock)
 	}
 
-	primaryLock, err := newSingleResourceLock(id, configs[0], o)
+	primaryLock, err := newSingleResourceLock(id, config, config.Configs[0])
 	if err != nil {
 		return nil, err
 	}

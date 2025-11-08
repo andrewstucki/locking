@@ -41,7 +41,7 @@ type LockerConfig struct {
 	Logger            raft.Logger
 }
 
-func (c *LockerConfig) Validate() error {
+func (c *LockerConfig) validate() error {
 	if c.ID == 0 {
 		return errors.New("id must be specified")
 	}
@@ -88,7 +88,7 @@ func asPeers(nodes []*LockerNode) []raft.Peer {
 }
 
 func Run(ctx context.Context, config LockerConfig, callbacks *LeaderCallbacks) error {
-	if err := config.Validate(); err != nil {
+	if err := config.validate(); err != nil {
 		return err
 	}
 
@@ -149,9 +149,7 @@ func runRaft(ctx context.Context, transport *grpcTransport, config LockerConfig,
 		MaxSizePerMsg:   1024 * 1024,
 		MaxInflightMsgs: 256,
 		CheckQuorum:     true,
-		Logger: &raft.DefaultLogger{
-			Logger: log.New(io.Discard, "", log.LUTC),
-		},
+		Logger:          config.Logger,
 	}, asPeers(config.Peers))
 
 	transport.setNode(node)

@@ -9,12 +9,15 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"log"
 	"math/big"
 	"net"
 	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.etcd.io/raft/v3"
 )
 
 func TestLocker(t *testing.T) {
@@ -32,40 +35,51 @@ func TestLocker(t *testing.T) {
 			defer cancel()
 
 			leaders := setupLockTest(t, ctx, tt.nodes)
+
+			stopped := []*testLeader{}
+
 			var currentLeader *testLeader
 			currentLeaders := leaders
 			// scale down til we get to the min followers
 			for len(currentLeaders) != (minQuorum - 1) {
 				currentLeader, currentLeaders = waitForAnyLeader(t, 15*time.Second, currentLeaders...)
 				currentLeader.Stop()
-				t.Log("killing leader", currentLeader.id)
+				stopped = append(stopped, currentLeader)
+				t.Log("killing leader", currentLeader.config.ID)
 			}
+
+			// restart and make sure that they become followers again
+			for _, leader := range stopped {
+				leader.Start(t, ctx)
+			}
+
+			_, _ = waitForAnyLeader(t, 15*time.Second, leaders...)
 		})
 	}
 }
 
 type testLeader struct {
-	id uint64
+	config LockerConfig
+
+	cancel context.CancelFunc
 
 	leader   chan struct{}
 	follower chan struct{}
 	onStop   chan struct{}
 	err      chan error
 
-	cancel      context.CancelFunc
 	stopped     atomic.Bool
 	isLeader    atomic.Bool
 	initialized atomic.Bool
 }
 
-func newTestLeader(id uint64, cancel context.CancelFunc) *testLeader {
+func newTestLeader(config LockerConfig) *testLeader {
 	return &testLeader{
-		id:       id,
+		config:   config,
 		leader:   make(chan struct{}, 1),
 		follower: make(chan struct{}, 1),
 		err:      make(chan error, 1),
 		onStop:   make(chan struct{}, 1),
-		cancel:   cancel,
 	}
 }
 
@@ -109,6 +123,25 @@ func (t *testLeader) HandleError(err error) {
 
 func (t *testLeader) IsStopped() bool {
 	return t.stopped.Load()
+}
+
+func (t *testLeader) Start(tst *testing.T, ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	t.cancel = cancel
+
+	t.stopped.Store(false)
+	t.initialized.Store(false)
+	t.isLeader.Store(false)
+
+	go func() {
+		defer t.Stop()
+		defer tst.Log("leader election goroutine exiting")
+
+		t.HandleError(Run(ctx, t.config, &LeaderCallbacks{
+			OnStartedLeading: t.OnStartedLeading,
+			OnStoppedLeading: t.OnStoppedLeading,
+		}))
+	}()
 }
 
 func (t *testLeader) Stop() {
@@ -250,25 +283,15 @@ func setupLockTest(t *testing.T, ctx context.Context, n int) []*testLeader {
 			Certificate:       certificates[i].certificate,
 			ElectionTimeout:   1 * time.Second,
 			HeartbeatInterval: 100 * time.Millisecond,
+			Logger:            testLogger(t),
 		})
 	}
 
 	for _, config := range configs {
-		ctx, cancel := context.WithCancel(ctx)
-		leader := newTestLeader(config.ID, cancel)
-		callbacks := &LeaderCallbacks{
-			OnStartedLeading: leader.OnStartedLeading,
-			OnStoppedLeading: leader.OnStoppedLeading,
-		}
-
+		leader := newTestLeader(config)
 		leaders = append(leaders, leader)
 
-		go func() {
-			defer leader.Stop()
-			defer t.Log("leader election goroutine exiting")
-
-			leader.HandleError(Run(ctx, config, callbacks))
-		}()
+		leader.Start(t, ctx)
 	}
 
 	return leaders
@@ -391,4 +414,8 @@ func generateSignedCert(t *testing.T, host string, caCert *x509.Certificate, caK
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
 
 	return certPEM, keyPEM
+}
+
+func testLogger(t *testing.T) raft.Logger {
+	return &raft.DefaultLogger{Logger: log.New(t.Output(), t.Name()+" ", log.LUTC)}
 }
