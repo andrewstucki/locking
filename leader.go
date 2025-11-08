@@ -3,6 +3,7 @@ package locking
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	"github.com/andrewstucki/locking/kube"
 	"github.com/andrewstucki/locking/raft"
@@ -15,7 +16,8 @@ type LeaderManager struct {
 
 	mutex sync.RWMutex
 
-	runner runFactory
+	isLeader atomic.Bool
+	runner   runFactory
 }
 
 func NewKubernetesLockManager(configuration kube.LockConfiguration) *LeaderManager {
@@ -23,6 +25,9 @@ func NewKubernetesLockManager(configuration kube.LockConfiguration) *LeaderManag
 	manager.runner = func(ctx context.Context) error {
 		return kube.Run(ctx, configuration, &kube.LeaderCallbacks{
 			OnStartedLeading: manager.runLeaderRoutines,
+			OnStoppedLeading: func() {
+				manager.isLeader.Store(false)
+			},
 		})
 	}
 
@@ -34,6 +39,9 @@ func NewRaftLockManager(configuration raft.LockConfiguration) *LeaderManager {
 	manager.runner = func(ctx context.Context) error {
 		return raft.Run(ctx, configuration, &raft.LeaderCallbacks{
 			OnStartedLeading: manager.runLeaderRoutines,
+			OnStoppedLeading: func() {
+				manager.isLeader.Store(false)
+			},
 		})
 	}
 
@@ -41,6 +49,8 @@ func NewRaftLockManager(configuration raft.LockConfiguration) *LeaderManager {
 }
 
 func (lm *LeaderManager) runLeaderRoutines(ctx context.Context) {
+	lm.isLeader.Store(true)
+
 	lm.mutex.RLock()
 	defer lm.mutex.RUnlock()
 
@@ -54,6 +64,10 @@ func (lm *LeaderManager) RegisterRoutine(fn func(ctx context.Context)) {
 	defer lm.mutex.Unlock()
 
 	lm.leaderRoutines = append(lm.leaderRoutines, fn)
+}
+
+func (lm *LeaderManager) IsLeader() bool {
+	return lm.isLeader.Load()
 }
 
 func (lm *LeaderManager) Run(ctx context.Context) error {
