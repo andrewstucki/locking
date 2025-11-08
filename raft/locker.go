@@ -28,7 +28,7 @@ type LockerNode struct {
 	Address string
 }
 
-type LockerConfig struct {
+type LockConfiguration struct {
 	ID          uint64
 	Address     string
 	CA          []byte
@@ -41,7 +41,7 @@ type LockerConfig struct {
 	Logger            raft.Logger
 }
 
-func (c *LockerConfig) validate() error {
+func (c *LockConfiguration) validate() error {
 	if c.ID == 0 {
 		return errors.New("id must be specified")
 	}
@@ -87,7 +87,7 @@ func asPeers(nodes []*LockerNode) []raft.Peer {
 	return peers
 }
 
-func Run(ctx context.Context, config LockerConfig, callbacks *LeaderCallbacks) error {
+func Run(ctx context.Context, config LockConfiguration, callbacks *LeaderCallbacks) error {
 	if err := config.validate(); err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func Run(ctx context.Context, config LockerConfig, callbacks *LeaderCallbacks) e
 	return nil
 }
 
-func runRaft(ctx context.Context, transport *grpcTransport, config LockerConfig, callbacks *LeaderCallbacks) error {
+func runRaft(ctx context.Context, transport *grpcTransport, config LockConfiguration, callbacks *LeaderCallbacks) error {
 	storage := raft.NewMemoryStorage()
 
 	if config.ElectionTimeout == 0 {

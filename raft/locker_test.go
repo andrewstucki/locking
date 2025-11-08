@@ -59,7 +59,7 @@ func TestLocker(t *testing.T) {
 }
 
 type testLeader struct {
-	config LockerConfig
+	config LockConfiguration
 
 	cancel context.CancelFunc
 
@@ -73,7 +73,7 @@ type testLeader struct {
 	initialized atomic.Bool
 }
 
-func newTestLeader(config LockerConfig) *testLeader {
+func newTestLeader(config LockConfiguration) *testLeader {
 	return &testLeader{
 		config:   config,
 		leader:   make(chan struct{}, 1),
@@ -267,14 +267,14 @@ func setupLockTest(t *testing.T, ctx context.Context, n int) []*testLeader {
 
 	ca, certificates := generateCertificates(t, nodes)
 
-	configs := []LockerConfig{}
+	configs := []LockConfiguration{}
 	for i, node := range nodes {
 		peers := []*LockerNode{}
 		for _, peer := range nodes {
 			peers = append(peers, peer)
 		}
 
-		configs = append(configs, LockerConfig{
+		configs = append(configs, LockConfiguration{
 			ID:                uint64(i + 1),
 			Address:           node.Address,
 			Peers:             peers,
