@@ -34,7 +34,7 @@ type LockConfiguration struct {
 	CA          []byte
 	PrivateKey  []byte
 	Certificate []byte
-	Peers       []*LockerNode
+	Peers       []LockerNode
 
 	ElectionTimeout   time.Duration
 	HeartbeatInterval time.Duration
@@ -71,7 +71,7 @@ func (n *LockerNode) asPeer() raft.Peer {
 	}
 }
 
-func peersForNodes(nodes []*LockerNode) map[uint64]string {
+func peersForNodes(nodes []LockerNode) map[uint64]string {
 	peers := make(map[uint64]string)
 	for _, node := range nodes {
 		peers[node.ID] = node.Address
@@ -79,7 +79,7 @@ func peersForNodes(nodes []*LockerNode) map[uint64]string {
 	return peers
 }
 
-func asPeers(nodes []*LockerNode) []raft.Peer {
+func asPeers(nodes []LockerNode) []raft.Peer {
 	peers := []raft.Peer{}
 	for _, node := range nodes {
 		peers = append(peers, node.asPeer())

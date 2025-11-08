@@ -257,9 +257,9 @@ func setupLockTest(t *testing.T, ctx context.Context, n int) []*testLeader {
 	ports := getFreePorts(t, n)
 
 	leaders := []*testLeader{}
-	nodes := []*LockerNode{}
+	nodes := []LockerNode{}
 	for i, port := range ports {
-		nodes = append(nodes, &LockerNode{
+		nodes = append(nodes, LockerNode{
 			ID:      uint64(i + 1),
 			Address: fmt.Sprintf("127.0.0.1:%d", port),
 		})
@@ -269,7 +269,7 @@ func setupLockTest(t *testing.T, ctx context.Context, n int) []*testLeader {
 
 	configs := []LockConfiguration{}
 	for i, node := range nodes {
-		peers := []*LockerNode{}
+		peers := []LockerNode{}
 		for _, peer := range nodes {
 			peers = append(peers, peer)
 		}
@@ -322,7 +322,7 @@ type certificate struct {
 	certificate []byte
 }
 
-func generateCertificates(t *testing.T, nodes []*LockerNode) ([]byte, []certificate) {
+func generateCertificates(t *testing.T, nodes []LockerNode) ([]byte, []certificate) {
 	caPEM, _, ca, caPK := generateCA(t)
 
 	certificates := []certificate{}
