@@ -15,9 +15,11 @@ import (
 	flag "github.com/spf13/pflag"
 	raftv4 "go.etcd.io/raft/v3"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 	"sigs.k8s.io/multicluster-runtime/providers/clusters"
 )
@@ -45,6 +47,8 @@ type RaftConfiguration struct {
 	ElectionTimeout   time.Duration
 	HeartbeatInterval time.Duration
 	Logger            logr.Logger
+	Metrics           bool
+	RestConfig        *rest.Config
 }
 
 func (r RaftConfiguration) validate() error {
@@ -115,14 +119,27 @@ func NewRaftRuntimeManager(config RaftConfiguration) (mcmanager.Manager, error) 
 		return nil, err
 	}
 
-	restConfig, err := ctrl.GetConfig()
-	if err != nil {
-		return nil, err
+	restConfig := config.RestConfig
+	if restConfig == nil {
+		var err error
+		restConfig, err = ctrl.GetConfig()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	raftPeers := []raft.LockerNode{}
 	clusterProvider := clusters.New()
 	for _, peer := range config.Peers {
+		raftPeers = append(raftPeers, raft.LockerNode{
+			ID:      stringToHash(peer.Name),
+			Address: peer.Address,
+		})
+
+		if peer.Name == config.Name {
+			continue
+		}
+
 		kubeConfig, err := loadKubeconfig(peer.KubeconfigFile)
 		if err != nil {
 			return nil, err
@@ -134,11 +151,6 @@ func NewRaftRuntimeManager(config RaftConfiguration) (mcmanager.Manager, error) 
 		if err := clusterProvider.Add(context.Background(), peer.Name, c, nil); err != nil {
 			return nil, err
 		}
-
-		raftPeers = append(raftPeers, raft.LockerNode{
-			ID:      stringToHash(peer.Name),
-			Address: peer.Address,
-		})
 	}
 
 	caBytes, err := os.ReadFile(config.CAFile)
@@ -168,10 +180,31 @@ func NewRaftRuntimeManager(config RaftConfiguration) (mcmanager.Manager, error) 
 		Logger:            &raftLogr{logger: config.Logger},
 	}
 
-	return newManager(restConfig, clusterProvider, locking.NewRaftLockManager(raftConfig), manager.Options{
+	opts := manager.Options{
 		Scheme:         config.Scheme,
 		LeaderElection: false,
-	})
+		Logger:         config.Logger,
+	}
+	if !config.Metrics {
+		opts.Metrics = server.Options{
+			BindAddress: "0",
+		}
+	}
+
+	manager, err := newManager(config.Logger, restConfig, clusterProvider, func() map[string]cluster.Cluster {
+		clusters := map[string]cluster.Cluster{}
+		for _, name := range clusterProvider.ClusterNames() {
+			if c, err := clusterProvider.Get(context.Background(), name); err == nil {
+				clusters[name] = c
+			}
+		}
+		return clusters
+	}, locking.NewRaftLockManager(raftConfig), opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return manager, nil
 }
 
 type raftLogr struct {
@@ -183,9 +216,9 @@ func (r *raftLogr) Debug(v ...any) {
 }
 func (r *raftLogr) Debugf(format string, v ...any) {
 	if format == "" {
-		r.logger.V(1).Info("DEBUG", v...)
+		r.logger.V(0).Info("DEBUG", v...)
 	} else {
-		r.logger.V(1).Info(fmt.Sprintf("[DEBUG] %s", fmt.Sprintf(format, v...)))
+		r.logger.V(0).Info(fmt.Sprintf("[DEBUG] %s", fmt.Sprintf(format, v...)))
 	}
 }
 

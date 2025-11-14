@@ -1,4 +1,4 @@
-package testing
+package acceptance
 
 import (
 	"bytes"

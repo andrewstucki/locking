@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net"
 	"testing"
 	"time"
 )
@@ -33,6 +34,16 @@ func (c CACertificate) Sign(t *testing.T, names ...string) Certificate {
 		t.Fatalf("generate server key: %v", err)
 	}
 
+	ips := []net.IP{}
+	dns := []string{}
+	for _, name := range names {
+		if ip := net.ParseIP(name); ip != nil {
+			ips = append(ips, ip)
+		} else {
+			dns = append(dns, name)
+		}
+	}
+
 	serialNumber, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
 	tmpl := x509.Certificate{
 		SerialNumber: serialNumber,
@@ -46,7 +57,8 @@ func (c CACertificate) Sign(t *testing.T, names ...string) Certificate {
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
-		DNSNames:              names,
+		DNSNames:              dns,
+		IPAddresses:           ips,
 	}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &tmpl, c.cert, &priv.PublicKey, c.pk)

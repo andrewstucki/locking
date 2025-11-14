@@ -1,18 +1,17 @@
-package testing
+package acceptance
 
 import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
 	"html/template"
-	"math/rand"
-	"net"
 	"os"
 	"os/exec"
 	"path"
 	"testing"
 	"time"
 
+	mctesting "github.com/andrewstucki/locking/multicluster/testing"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -21,8 +20,8 @@ import (
 type ConnectedCluster struct {
 	*Cluster
 	domain             string
-	ca                 CACertificate
-	linkerdCertificate Certificate
+	ca                 mctesting.CACertificate
+	linkerdCertificate mctesting.Certificate
 	initialized        bool
 	tmp                string
 }
@@ -158,13 +157,13 @@ func (c *ConnectedCluster) dumpCertificates(t *testing.T) {
 	root := path.Join(c.tmp, "root.crt")
 	crt := path.Join(c.tmp, "ca.crt")
 	key := path.Join(c.tmp, "ca.key")
-	if err := os.WriteFile(root, c.ca.pem, 0o644); err != nil {
+	if err := os.WriteFile(root, c.ca.Bytes(), 0o644); err != nil {
 		t.Fatalf("failed to write temporary root ca file: %v", err)
 	}
-	if err := os.WriteFile(crt, c.linkerdCertificate.certificate, 0o644); err != nil {
+	if err := os.WriteFile(crt, c.linkerdCertificate.Bytes(), 0o644); err != nil {
 		t.Fatalf("failed to write temporary cert file: %v", err)
 	}
-	if err := os.WriteFile(key, c.linkerdCertificate.privateKey, 0o644); err != nil {
+	if err := os.WriteFile(key, c.linkerdCertificate.PrivateKeyBytes(), 0o644); err != nil {
 		t.Fatalf("failed to write temporary cert file: %v", err)
 	}
 }
@@ -326,10 +325,16 @@ func SetupClusters(t *testing.T, names []string, cleanup ...bool) ConnectedClust
 	}
 
 	var clusters []*ConnectedCluster
-	network := generateRandomString(5)
-	ports := getFreePorts(t, len(names))
+	network := mctesting.GenerateRandomString(5)
+	ports := mctesting.GetFreePorts(t, len(names))
 
-	ca := GenerateCA(t)
+	if shouldCleanup {
+		t.Cleanup(func() {
+			_, _ = exec.Command("docker", "network", "rm", network).CombinedOutput()
+		})
+	}
+
+	ca := mctesting.GenerateCA(t)
 	for i, name := range names {
 		domain := fmt.Sprintf("%s.kubernetes.local", name)
 		cluster, created, err := GetOrCreate(name, WithAgents(0), WithDomain(domain), WithNetwork(network), WithPort(ports[i]), WithNoWait())
@@ -392,36 +397,4 @@ func SetupClusters(t *testing.T, names []string, cleanup ...bool) ConnectedClust
 	}
 
 	return clusters
-}
-
-func getFreePorts(t *testing.T, n int) []int {
-	t.Helper()
-
-	ports := make([]int, 0, n)
-	listeners := make([]net.Listener, 0, n)
-
-	for i := 0; i < n; i++ {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatalf("error getting free port: %v", err)
-		}
-		listeners = append(listeners, l)
-		ports = append(ports, l.Addr().(*net.TCPAddr).Port)
-	}
-
-	for _, l := range listeners {
-		l.Close()
-	}
-
-	return ports
-}
-
-const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-func generateRandomString(length int) string {
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
-	}
-	return string(b)
 }

@@ -1,28 +1,56 @@
-package testing
+package acceptance
 
 import (
 	"fmt"
 	"testing"
 
+	mctesting "github.com/andrewstucki/locking/multicluster/testing"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestSetupClusters(t *testing.T) {
-	image := HasImageOrBuild(t, "local/operator:dev", "../..", "operator/Dockerfile")
+	image := HasImageOrBuild(t, "local/operator:dev", "../../..", "operator/Dockerfile", true)
 
 	clusters := SetupClusters(t, []string{"a", "b", "c"}, false)
 	clusters.ImportImages(t, image)
 
 	peers := operatorPeerAddresses(clusters)
-	ca := GenerateCA(t)
+	ca := mctesting.GenerateCA(t)
 
 	configs := []*corev1.Secret{}
 	for _, cluster := range clusters {
 		configs = append(configs, cluster.ServiceAccountKubeconfig(t, "operator", metav1.NamespaceDefault))
+		cluster.Create(t, &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "operator",
+				Namespace: metav1.NamespaceDefault,
+			},
+			Rules: []rbacv1.PolicyRule{{
+				Verbs:     []string{"watch", "list", "get"},
+				APIGroups: []string{""},
+				Resources: []string{"configmaps"},
+			}},
+		}, &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "operator",
+				Namespace: metav1.NamespaceDefault,
+			},
+			Subjects: []rbacv1.Subject{{
+				Kind:      "ServiceAccount",
+				Name:      "operator",
+				Namespace: metav1.NamespaceDefault,
+			}},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: "rbac.authorization.k8s.io",
+				Name:     "operator",
+				Kind:     "ClusterRole",
+			},
+		})
 	}
 
 	for _, cluster := range clusters {
@@ -54,7 +82,7 @@ func operatorPeerAddresses(clusters ConnectedClusters) []peerAddress {
 	return peers
 }
 
-func operatorDeploymentForCluster(t *testing.T, ca CACertificate, peers []peerAddress, cluster *ConnectedCluster, image string) []client.Object {
+func operatorDeploymentForCluster(t *testing.T, ca mctesting.CACertificate, peers []peerAddress, cluster *ConnectedCluster, image string) []client.Object {
 	name := "operator"
 
 	peerVolumes := []corev1.Volume{}
@@ -114,6 +142,7 @@ func operatorDeploymentForCluster(t *testing.T, ca CACertificate, peers []peerAd
 						},
 					},
 					Spec: corev1.PodSpec{
+						ServiceAccountName: "operator",
 						Containers: []corev1.Container{{
 							Name:  name,
 							Image: image,

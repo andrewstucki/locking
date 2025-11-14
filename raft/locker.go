@@ -148,6 +148,7 @@ func runRaft(ctx context.Context, transport *grpcTransport, config LockConfigura
 		config.Logger = discardLogger
 	}
 
+	config.Logger.Infof("starting node")
 	node := raft.StartNode(&raft.Config{
 		ID:              config.ID,
 		ElectionTick:    int(config.ElectionTimeout.Milliseconds()),
@@ -220,6 +221,7 @@ func runRaft(ctx context.Context, transport *grpcTransport, config LockConfigura
 			for {
 				applied, err := transport.DoSend(msg)
 				if err != nil {
+					config.Logger.Warningf("unreachable %d: %v", msg.To, err)
 					node.ReportUnreachable(msg.To)
 					break
 				}

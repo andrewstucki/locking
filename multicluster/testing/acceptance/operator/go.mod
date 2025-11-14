@@ -1,8 +1,8 @@
-module github.com/andrewstucki/locking/multicluster/testing/operator
+module github.com/andrewstucki/locking/multicluster/testing/acceptance/operator
 
 go 1.25.0
 
-replace github.com/andrewstucki/locking => ../../..
+replace github.com/andrewstucki/locking => ../../../..
 
 require (
 	github.com/andrewstucki/locking v0.0.0-00010101000000-000000000000
