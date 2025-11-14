@@ -50,6 +50,7 @@
               pkgs.kubectl
               pkgs.setup-envtest # Kubernetes provided test utilities
               pkgs.vcluster
+              pkgs.linkerd
             ] ++ lib.optionals pkgs.stdenv.isLinux [
               pkgs.sysctl # Used to adjust ulimits on linux systems (Namely, CI).
             ];

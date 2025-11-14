@@ -7,12 +7,15 @@ import (
 
 	"github.com/andrewstucki/locking/kube"
 	"github.com/andrewstucki/locking/raft"
+	"github.com/go-logr/logr"
 )
 
 type runFactory func(ctx context.Context) error
 
 type LeaderManager struct {
-	leaderRoutines []func(ctx context.Context)
+	leaderRoutines []func(ctx context.Context) error
+
+	logger logr.Logger
 
 	mutex sync.RWMutex
 
@@ -55,11 +58,23 @@ func (lm *LeaderManager) runLeaderRoutines(ctx context.Context) {
 	defer lm.mutex.RUnlock()
 
 	for _, fn := range lm.leaderRoutines {
-		go fn(ctx)
+		go func() {
+			for {
+				err := fn(ctx)
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					if err != nil {
+						lm.logger.Error(err, "error encountered on leader routine, restarting")
+					}
+				}
+			}
+		}()
 	}
 }
 
-func (lm *LeaderManager) RegisterRoutine(fn func(ctx context.Context)) {
+func (lm *LeaderManager) RegisterRoutine(fn func(ctx context.Context) error) {
 	lm.mutex.Lock()
 	defer lm.mutex.Unlock()
 

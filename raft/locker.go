@@ -92,9 +92,16 @@ func Run(ctx context.Context, config LockConfiguration, callbacks *LeaderCallbac
 		return err
 	}
 
-	transport, err := newGRPCTransport(config.Certificate, config.PrivateKey, config.CA, config.Address, peersForNodes(config.Peers))
+	nodes := peersForNodes(config.Peers)
+	transport, err := newGRPCTransport(config.Certificate, config.PrivateKey, config.CA, config.Address, nodes)
 	if err != nil {
 		return err
+	}
+
+	for node, address := range nodes {
+		if config.Logger != nil {
+			config.Logger.Infof("node: %d, address: %s", node, address)
+		}
 	}
 
 	errs := make(chan error, 2)
