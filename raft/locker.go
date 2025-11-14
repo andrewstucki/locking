@@ -97,6 +97,7 @@ func Run(ctx context.Context, config LockConfiguration, callbacks *LeaderCallbac
 	if err != nil {
 		return err
 	}
+	transport.logger = config.Logger
 
 	for node, address := range nodes {
 		if config.Logger != nil {
@@ -129,6 +130,7 @@ func Run(ctx context.Context, config LockConfiguration, callbacks *LeaderCallbac
 		wg.Wait()
 		return err
 	case <-ctx.Done():
+		config.Logger.Infof("context canceled, waiting for raft and transport to exit")
 		wg.Wait()
 	}
 
@@ -136,6 +138,8 @@ func Run(ctx context.Context, config LockConfiguration, callbacks *LeaderCallbac
 }
 
 func runRaft(ctx context.Context, transport *grpcTransport, config LockConfiguration, callbacks *LeaderCallbacks) error {
+	defer config.Logger.Info("shutting down raft")
+
 	storage := raft.NewMemoryStorage()
 
 	if config.ElectionTimeout == 0 {
@@ -151,8 +155,8 @@ func runRaft(ctx context.Context, transport *grpcTransport, config LockConfigura
 	config.Logger.Infof("starting node")
 	node := raft.StartNode(&raft.Config{
 		ID:              config.ID,
-		ElectionTick:    int(config.ElectionTimeout.Milliseconds()),
-		HeartbeatTick:   int(config.HeartbeatInterval.Milliseconds()),
+		ElectionTick:    int(config.ElectionTimeout.Milliseconds() / 10),
+		HeartbeatTick:   int(config.HeartbeatInterval.Milliseconds() / 10),
 		Storage:         storage,
 		MaxSizePerMsg:   1024 * 1024,
 		MaxInflightMsgs: 256,
@@ -163,12 +167,12 @@ func runRaft(ctx context.Context, transport *grpcTransport, config LockConfigura
 	transport.setNode(node)
 
 	go func() {
-		compactions := 10000 // every 10 seconds
+		compactions := 1000 // every 10 seconds
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(1 * time.Millisecond):
+			case <-time.After(10 * time.Millisecond):
 				node.Tick()
 				if compactions == 0 {
 					storage.Compact(node.Status().Applied)
@@ -183,64 +187,70 @@ func runRaft(ctx context.Context, transport *grpcTransport, config LockConfigura
 
 	isLeader := false
 	initialized := false
-	for rd := range node.Ready() {
-		// Observe soft state changes for leadership
-		var nowLeader bool
-		if rd.SoftState != nil {
-			nowLeader = rd.SoftState.Lead == config.ID || rd.SoftState.RaftState == raft.StateLeader
-		} else {
-			status := node.Status()
-			nowLeader = status.Lead == config.ID || status.RaftState == raft.StateLeader
-		}
-
-		if nowLeader != isLeader || !initialized {
-			initialized = true
-			if nowLeader {
-				// just became leader, start things up
-				isLeader = true
-				if callbacks.OnStartedLeading != nil {
-					go callbacks.OnStartedLeading(leaderCtx)
-				}
-			} else {
-				// we became a follower
-				leaderCancel()
-				leaderCtx, leaderCancel = context.WithCancel(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			leaderCancel()
+			if isLeader {
 				if callbacks.OnStoppedLeading != nil {
 					go callbacks.OnStoppedLeading()
 				}
 			}
-		}
-
-		// send out messages
-		_ = storage.Append(rd.Entries)
-		for _, msg := range rd.Messages {
-			if msg.To == config.ID {
-				node.Step(ctx, msg)
-				continue
+			config.Logger.Infof("context canceled, stopping node")
+			node.Stop()
+			return nil
+		case rd := <-node.Ready():
+			// Observe soft state changes for leadership
+			var nowLeader bool
+			if rd.SoftState != nil {
+				nowLeader = rd.SoftState.Lead == config.ID || rd.SoftState.RaftState == raft.StateLeader
+			} else {
+				status := node.Status()
+				nowLeader = status.Lead == config.ID || status.RaftState == raft.StateLeader
 			}
-			for {
-				applied, err := transport.DoSend(msg)
-				if err != nil {
-					config.Logger.Warningf("unreachable %d: %v", msg.To, err)
-					node.ReportUnreachable(msg.To)
-					break
-				}
-				if !applied {
-					// attempt to apply again in a second
-					time.Sleep(1 * time.Second)
+
+			if nowLeader != isLeader || !initialized {
+				initialized = true
+				if nowLeader {
+					// just became leader, start things up
+					isLeader = true
+					if callbacks.OnStartedLeading != nil {
+						go callbacks.OnStartedLeading(leaderCtx)
+					}
 				} else {
-					break
+					// we became a follower
+					leaderCancel()
+					leaderCtx, leaderCancel = context.WithCancel(ctx)
+					if callbacks.OnStoppedLeading != nil {
+						go callbacks.OnStoppedLeading()
+					}
 				}
 			}
-		}
 
-		node.Advance()
-	}
+			// send out messages
+			_ = storage.Append(rd.Entries)
+			for _, msg := range rd.Messages {
+				if msg.To == config.ID {
+					node.Step(ctx, msg)
+					continue
+				}
+				for {
+					applied, err := transport.DoSend(msg)
+					if err != nil {
+						config.Logger.Warningf("unreachable %d: %v", msg.To, err)
+						node.ReportUnreachable(msg.To)
+						break
+					}
+					if !applied {
+						// attempt to apply again in a second
+						time.Sleep(1 * time.Second)
+					} else {
+						break
+					}
+				}
+			}
 
-	leaderCancel()
-	if isLeader {
-		if callbacks.OnStoppedLeading != nil {
-			go callbacks.OnStoppedLeading()
+			node.Advance()
 		}
 	}
 

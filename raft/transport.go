@@ -43,6 +43,8 @@ type grpcTransport struct {
 	serverCredentials credentials.TransportCredentials
 	clientCredentials credentials.TransportCredentials
 
+	logger raft.Logger
+
 	transportv1.UnimplementedTransportServiceServer
 }
 
@@ -120,6 +122,8 @@ func (t *grpcTransport) Send(ctx context.Context, req *transportv1.SendRequest) 
 }
 
 func (t *grpcTransport) Run(ctx context.Context) error {
+	defer t.logger.Info("shutting down grpc transport")
+
 	server := grpc.NewServer(grpc.Creds(t.serverCredentials))
 	transportv1.RegisterTransportServiceServer(server, t)
 

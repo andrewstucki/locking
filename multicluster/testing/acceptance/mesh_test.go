@@ -31,7 +31,7 @@ func TestSetupClusters(t *testing.T) {
 				Namespace: metav1.NamespaceDefault,
 			},
 			Rules: []rbacv1.PolicyRule{{
-				Verbs:     []string{"watch", "list", "get"},
+				Verbs:     []string{"watch", "list", "get", "update"},
 				APIGroups: []string{""},
 				Resources: []string{"configmaps"},
 			}},
@@ -58,6 +58,27 @@ func TestSetupClusters(t *testing.T) {
 			cluster.Create(t, config.DeepCopy())
 		}
 		cluster.Create(t, operatorDeploymentForCluster(t, ca, peers, cluster, image)...)
+		cluster.Create(t, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "acceptance-test",
+				Namespace: metav1.NamespaceDefault,
+				Annotations: map[string]string{
+					"acceptance.testing/reconcile": "true",
+				},
+			},
+		})
+	}
+
+	for _, cluster := range clusters {
+		cluster.WaitFor(t, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "acceptance-test",
+				Namespace: metav1.NamespaceDefault,
+			},
+		}, func(o client.Object) bool {
+			data := o.(*corev1.ConfigMap).Data
+			return data != nil && data["reconciled"] == "true"
+		})
 	}
 }
 

@@ -428,3 +428,7 @@ func (c *Cluster) wait(t *testing.T, obj client.Object, cond func(o client.Objec
 
 	t.Fatal("condition never met")
 }
+
+func (c *Cluster) WaitFor(t *testing.T, obj client.Object, cond func(o client.Object) bool) {
+	c.wait(t, obj, cond)
+}

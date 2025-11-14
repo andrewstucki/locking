@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -46,8 +47,41 @@ func main() {
 
 			if err := mcbuilder.ControllerManagedBy(manager).For(&corev1.ConfigMap{}, mcbuilder.WithEngageWithLocalCluster(true)).Complete(mcreconcile.Func(func(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 				log := ctrllog.FromContext(ctx).WithValues("cluster", req.ClusterName, "namespace", req.Namespace, "name", req.Name)
-				log.Info("Reconciling ConfigMap")
 
+				cluster, err := manager.GetCluster(ctx, req.ClusterName)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+
+				client := cluster.GetClient()
+				var configmap corev1.ConfigMap
+				if err := client.Get(ctx, req.NamespacedName, &configmap); err != nil {
+					if apierrors.IsNotFound(err) {
+						return ctrl.Result{}, nil
+					}
+					return ctrl.Result{}, err
+				}
+
+				if configmap.Annotations["acceptance.testing/reconcile"] == "true" {
+					log.Info("Reconciling ConfigMap")
+					if configmap.Data == nil {
+						log.Info("Reconciling ConfigMap")
+						configmap.Data = map[string]string{}
+						log.Info("config map empty")
+					} else {
+						log.Info("config map value", "value", configmap.Data["reconciled"])
+					}
+
+					if configmap.Data["reconciled"] != "true" {
+						configmap.Data["reconciled"] = "true"
+						if err := client.Update(ctx, &configmap); err != nil {
+							if apierrors.IsConflict(err) {
+								return ctrl.Result{Requeue: true}, nil
+							}
+							return ctrl.Result{}, err
+						}
+					}
+				}
 				return ctrl.Result{}, nil
 			})); err != nil {
 				log.Error(err, "initializing controller")

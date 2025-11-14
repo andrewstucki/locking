@@ -16,9 +16,11 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 )
 
 type TestClusters []*TestCluster
@@ -117,10 +119,29 @@ func (c *TestCluster) dumpConfig(t *testing.T) {
 	}
 }
 
-func SetupTest(t *testing.T, names []string, build func(*TestCluster, *mcbuilder.Builder) error) TestClusters {
+func (c *TestCluster) WaitFor(t *testing.T, obj client.Object, cond func(o client.Object) bool) {
+	t.Helper()
+
+	for range 30 {
+		if err := c.APIServer.client.Get(t.Context(), client.ObjectKeyFromObject(obj), obj); err != nil {
+			t.Fatalf("error fetching object: %v", err)
+		}
+
+		if cond(obj) {
+			return
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	t.Fatal("condition never met")
+}
+
+func SetupTest(t *testing.T, names []string, build func(mcmanager.Manager, *TestCluster, *mcbuilder.Builder) error) TestClusters {
 	if len(names) < 3 {
 		t.Fatalf("at least three servers are required")
 	}
+
+	ctrl.SetLogger(testr.New(t))
 
 	ports := mctesting.GetFreePorts(t, len(names))
 	ca := mctesting.GenerateCA(t)
@@ -168,7 +189,7 @@ func SetupTest(t *testing.T, names []string, build func(*TestCluster, *mcbuilder
 		if err != nil {
 			t.Fatalf("error creating manager: %v", err)
 		}
-		if err := build(cluster, mcbuilder.ControllerManagedBy(manager)); err != nil {
+		if err := build(manager, cluster, mcbuilder.ControllerManagedBy(manager)); err != nil {
 			t.Fatalf("error creating manager: %v", err)
 		}
 		go func() {
@@ -192,10 +213,7 @@ func RunTestServer(t *testing.T) *TestAPIServer {
 	var environment envtest.Environment
 
 	t.Cleanup(func() {
-		err := environment.Stop()
-		if err != nil {
-			t.Fatalf("failed to stop test environment: %v", err)
-		}
+		_ = environment.Stop()
 	})
 
 	cfg, err := environment.Start()
