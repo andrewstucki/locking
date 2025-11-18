@@ -128,6 +128,14 @@ func NewRaftRuntimeManager(config RaftConfiguration) (mcmanager.Manager, error) 
 		}
 	}
 
+	peers := []string{}
+	peerAddresses := []string{}
+	for _, peer := range config.Peers {
+		peers = append(peers, peer.Name)
+		peerAddresses = append(peerAddresses, peer.Address)
+	}
+
+	config.Logger.V(0).Info("initializing raft-based runtime manager", "node", config.Name, "peers", peers, "peerAddresses", peerAddresses)
 	raftPeers := []raft.LockerNode{}
 	clusterProvider := clusters.New()
 	for _, peer := range config.Peers {

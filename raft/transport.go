@@ -87,7 +87,7 @@ func (t *grpcTransport) getNode() raft.Node {
 	return t.node
 }
 
-func (t *grpcTransport) DoSend(msg raftpb.Message) (bool, error) {
+func (t *grpcTransport) DoSend(ctx context.Context, msg raftpb.Message) (bool, error) {
 	peer, ok := t.peers[msg.To]
 	if !ok {
 		return false, fmt.Errorf("unknown peer %d", msg.To)
@@ -95,14 +95,14 @@ func (t *grpcTransport) DoSend(msg raftpb.Message) (bool, error) {
 
 	data, err := msg.Marshal()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("marshaling message for peer %q: %w", peer.addr, err)
 	}
 
-	resp, err := peer.client.Send(context.Background(), &transportv1.SendRequest{
+	resp, err := peer.client.Send(ctx, &transportv1.SendRequest{
 		Payload: data,
 	})
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("sending to peer %q: %w", peer.addr, err)
 	}
 
 	return resp.Applied, nil

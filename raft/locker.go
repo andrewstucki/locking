@@ -176,7 +176,7 @@ func runRaft(ctx context.Context, transport *grpcTransport, config LockConfigura
 				node.Tick()
 				if compactions == 0 {
 					storage.Compact(node.Status().Applied)
-					compactions = 10000
+					compactions = 1000
 				}
 				compactions--
 			}
@@ -235,9 +235,9 @@ func runRaft(ctx context.Context, transport *grpcTransport, config LockConfigura
 					continue
 				}
 				for {
-					applied, err := transport.DoSend(msg)
+					applied, err := transport.DoSend(ctx, msg)
 					if err != nil {
-						config.Logger.Warningf("unreachable %d: %v", msg.To, err)
+						config.Logger.Infof("unreachable %d: %v", msg.To, err)
 						node.ReportUnreachable(msg.To)
 						break
 					}
@@ -253,6 +253,4 @@ func runRaft(ctx context.Context, transport *grpcTransport, config LockConfigura
 			node.Advance()
 		}
 	}
-
-	return nil
 }

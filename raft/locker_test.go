@@ -2,21 +2,15 @@ package raft
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"fmt"
 	"log"
-	"math/big"
 	"net"
 	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/andrewstucki/locking/multicluster/bootstrap"
 	"go.etcd.io/raft/v3"
 )
 
@@ -265,7 +259,14 @@ func setupLockTest(t *testing.T, ctx context.Context, n int) []*testLeader {
 		})
 	}
 
-	ca, certificates := generateCertificates(t, nodes)
+	ca, err := bootstrap.GenerateCA("unit", "Root CA", nil)
+	if err != nil {
+		t.Fatalf("error generating ca: %v", err)
+	}
+	certificate, err := ca.Sign("127.0.0.1")
+	if err != nil {
+		t.Fatalf("error generating certificate: %v", err)
+	}
 
 	configs := []LockConfiguration{}
 	for i, node := range nodes {
@@ -278,9 +279,9 @@ func setupLockTest(t *testing.T, ctx context.Context, n int) []*testLeader {
 			ID:                uint64(i + 1),
 			Address:           node.Address,
 			Peers:             peers,
-			CA:                ca,
-			PrivateKey:        certificates[i].privateKey,
-			Certificate:       certificates[i].certificate,
+			CA:                ca.Bytes(),
+			PrivateKey:        certificate.PrivateKeyBytes(),
+			Certificate:       certificate.Bytes(),
 			ElectionTimeout:   1 * time.Second,
 			HeartbeatInterval: 100 * time.Millisecond,
 			Logger:            testLogger(t),
@@ -315,105 +316,6 @@ func getFreePorts(t *testing.T, n int) []int {
 	}
 
 	return ports
-}
-
-type certificate struct {
-	privateKey  []byte
-	certificate []byte
-}
-
-func generateCertificates(t *testing.T, nodes []LockerNode) ([]byte, []certificate) {
-	caPEM, _, ca, caPK := generateCA(t)
-
-	certificates := []certificate{}
-	for range nodes {
-		pem, pkPEM := generateSignedCert(t, "127.0.0.1", ca, caPK)
-		certificates = append(certificates, certificate{
-			privateKey:  pkPEM,
-			certificate: pem,
-		})
-	}
-
-	return caPEM, certificates
-}
-
-func generateCA(t *testing.T) ([]byte, []byte, *x509.Certificate, *ecdsa.PrivateKey) {
-	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("error generating CA: %v", err)
-	}
-
-	serialNumber, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
-	caTemplate := x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			CommonName:   "test",
-			Organization: []string{"test"},
-		},
-		NotBefore: time.Now(),
-		NotAfter:  time.Now().Add(10 * 365 * 24 * time.Hour),
-
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		MaxPathLen:            1,
-	}
-
-	derBytes, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caKey.PublicKey, caKey)
-	if err != nil {
-		t.Fatalf("error creating CA certificate: %v", err)
-	}
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-
-	keyBytes, err := x509.MarshalECPrivateKey(caKey)
-	if err != nil {
-		t.Fatalf("error marshaling CA: %v", err)
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
-
-	caCert, err := x509.ParseCertificate(derBytes)
-	if err != nil {
-		t.Fatalf("error parsing CA: %v", err)
-	}
-
-	return certPEM, keyPEM, caCert, caKey
-}
-
-func generateSignedCert(t *testing.T, host string, caCert *x509.Certificate, caKey *ecdsa.PrivateKey) ([]byte, []byte) {
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("generate server key: %v", err)
-	}
-
-	serialNumber, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
-	tmpl := x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			CommonName:   host,
-			Organization: []string{"test"},
-		},
-		NotBefore: time.Now(),
-		NotAfter:  time.Now().Add(365 * 24 * time.Hour),
-
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
-		BasicConstraintsValid: true,
-		IPAddresses:           []net.IP{net.ParseIP(host)},
-	}
-
-	derBytes, err := x509.CreateCertificate(rand.Reader, &tmpl, caCert, &priv.PublicKey, caKey)
-	if err != nil {
-		t.Fatalf("generate server cert: %v", err)
-	}
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-
-	keyBytes, err := x509.MarshalECPrivateKey(priv)
-	if err != nil {
-		t.Fatalf("generate marshaling cert: %v", err)
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
-
-	return certPEM, keyPEM
 }
 
 func testLogger(t *testing.T) raft.Logger {

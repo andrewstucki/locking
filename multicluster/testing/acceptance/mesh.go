@@ -2,26 +2,22 @@ package acceptance
 
 import (
 	"bytes"
-	"encoding/base64"
 	"fmt"
-	"html/template"
 	"os"
 	"os/exec"
 	"path"
 	"testing"
 	"time"
 
+	"github.com/andrewstucki/locking/multicluster/bootstrap"
 	mctesting "github.com/andrewstucki/locking/multicluster/testing"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type ConnectedCluster struct {
 	*Cluster
 	domain             string
-	ca                 mctesting.CACertificate
-	linkerdCertificate mctesting.Certificate
+	ca                 *bootstrap.CACertificate
+	linkerdCertificate *bootstrap.CACertificate
 	initialized        bool
 	tmp                string
 }
@@ -40,6 +36,10 @@ func (c *ConnectedCluster) DNSNames(name, namespace string) []string {
 	}
 }
 
+func (c *ConnectedCluster) ContextName() string {
+	return "k3d-" + c.Name
+}
+
 func (c *ConnectedCluster) RemoteFQDN(name, namespace string) string {
 	return name + "-" + c.Name + "." + namespace + ".svc." + c.domain
 }
@@ -47,92 +47,6 @@ func (c *ConnectedCluster) RemoteFQDN(name, namespace string) string {
 func (c *ConnectedCluster) RemoteName(name string) string {
 	return name + "-" + c.Name
 }
-
-func (c *ConnectedCluster) ServiceAccountKubeconfig(t *testing.T, name, namespace string) *corev1.Secret {
-	t.Helper()
-
-	c.Create(t, &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-	}, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name + "-token",
-			Namespace: namespace,
-			Annotations: map[string]string{
-				corev1.ServiceAccountNameKey: name,
-			},
-		},
-		Type: corev1.SecretTypeServiceAccountToken,
-	})
-
-	secret := corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name + "-token",
-			Namespace: namespace,
-		},
-	}
-	c.wait(t, &secret, func(o client.Object) bool {
-		secret := o.(*corev1.Secret)
-		return len(secret.Data["token"]) != 0
-	})
-
-	token := string(secret.Data["token"])
-	ca := base64.StdEncoding.EncodeToString(secret.Data["ca.crt"])
-
-	ip := c.waitForIP(t)
-
-	var buf bytes.Buffer
-	err := kubeconfigTemplate.Execute(&buf, struct {
-		CA        string
-		APIServer string
-		Cluster   string
-		User      string
-		Token     string
-	}{
-		CA:        ca,
-		APIServer: fmt.Sprintf("https://%s:6443", ip),
-		Token:     token,
-		User:      name,
-		Cluster:   "k3d-" + c.Name,
-	})
-
-	if err != nil {
-		t.Fatalf("error executing template: %v", err)
-	}
-
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name + "-" + c.Name + "-kubeconfig",
-			Namespace: namespace,
-		},
-		Data: map[string][]byte{
-			"kubeconfig.yaml": buf.Bytes(),
-		},
-	}
-}
-
-var kubeconfigTemplate = template.Must(template.New("").Parse(`
-apiVersion: v1
-clusters:
-- cluster:
-    certificate-authority-data: {{.CA}}
-    server: {{.APIServer}}
-  name: {{.Cluster}}
-contexts:
-- context:
-    cluster: {{.Cluster}}
-    user: {{.User}}
-  name: {{.Cluster}}
-current-context: {{.Cluster}}
-kind: Config
-preferences: {}
-users:
-- name: {{.User}}
-  user:
-    token: {{.Token}}
-`))
 
 func (c *ConnectedCluster) CheckConnectivity(t *testing.T) {
 	if out, err := exec.Command("linkerd", "--context", "k3d-"+c.Name, "mc", "check").CombinedOutput(); err != nil {
@@ -269,6 +183,10 @@ func (c *ConnectedCluster) installLinkerdMultiCluster(t *testing.T) {
 	}
 }
 
+func (c *ConnectedCluster) IP(t *testing.T) string {
+	return c.waitForIP(t)
+}
+
 func (c *ConnectedCluster) waitForIP(t *testing.T) string {
 	t.Helper()
 
@@ -316,7 +234,7 @@ func (c ConnectedClusters) ImportImages(t *testing.T, images ...string) {
 	}
 }
 
-func SetupClusters(t *testing.T, names []string, cleanup ...bool) ConnectedClusters {
+func SetupMeshClusters(t *testing.T, names []string, cleanup ...bool) ConnectedClusters {
 	t.Helper()
 
 	shouldCleanup := true
@@ -334,7 +252,11 @@ func SetupClusters(t *testing.T, names []string, cleanup ...bool) ConnectedClust
 		})
 	}
 
-	ca := mctesting.GenerateCA(t)
+	ca, err := bootstrap.GenerateCA("linkerd", "Mesh Root CA", nil)
+	if err != nil {
+		t.Fatalf("error generating CA: %v", err)
+	}
+
 	for i, name := range names {
 		domain := fmt.Sprintf("%s.kubernetes.local", name)
 		cluster, created, err := GetOrCreate(name, WithAgents(0), WithDomain(domain), WithNetwork(network), WithPort(ports[i]), WithNoWait())
@@ -349,12 +271,16 @@ func SetupClusters(t *testing.T, names []string, cleanup ...bool) ConnectedClust
 				}
 			})
 		}
+		intermediate, err := ca.Intermediate("identity.linkerd." + domain)
+		if err != nil {
+			t.Fatalf("error generating intermediate CA: %v", err)
+		}
 		clusters = append(clusters, &ConnectedCluster{
 			Cluster:            cluster,
 			ca:                 ca,
 			domain:             domain,
 			initialized:        !created,
-			linkerdCertificate: ca.SignCA(t, "identity.linkerd."+domain),
+			linkerdCertificate: intermediate,
 		})
 	}
 

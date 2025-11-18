@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/andrewstucki/locking/multicluster"
+	"github.com/andrewstucki/locking/multicluster/bootstrap"
 	mctesting "github.com/andrewstucki/locking/multicluster/testing"
 	"github.com/go-logr/logr/testr"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -40,8 +41,8 @@ func (c TestClusters) Cluster(t *testing.T, name string) *TestCluster {
 
 type TestCluster struct {
 	Name           string
-	CA             mctesting.CACertificate
-	Certificate    mctesting.Certificate
+	CA             *bootstrap.CACertificate
+	Certificate    *bootstrap.Certificate
 	APIServer      *TestAPIServer
 	Config         multicluster.RaftConfiguration
 	KubeconfigFile string
@@ -144,7 +145,11 @@ func SetupTest(t *testing.T, names []string, build func(mcmanager.Manager, *Test
 	ctrl.SetLogger(testr.New(t))
 
 	ports := mctesting.GetFreePorts(t, len(names))
-	ca := mctesting.GenerateCA(t)
+	ca, err := bootstrap.GenerateCA("operator", "Operator Root CA", nil)
+	if err != nil {
+		t.Fatalf("error generating CA: %v", err)
+	}
+
 	clusters := []*TestCluster{}
 	raftClusters := []multicluster.RaftCluster{}
 
@@ -153,12 +158,16 @@ func SetupTest(t *testing.T, names []string, build func(mcmanager.Manager, *Test
 		if err := clientgoscheme.AddToScheme(scheme); err != nil {
 			t.Fatalf("failed to register client go scheme: %v", err)
 		}
+		certificate, err := ca.Sign("127.0.0.1")
+		if err != nil {
+			t.Fatalf("failed to generate certificate: %v", err)
+		}
 		apiServer := RunTestServer(t)
 		address := fmt.Sprintf("127.0.0.1:%d", ports[i])
 		cluster := &TestCluster{
 			Name:        name,
 			CA:          ca,
-			Certificate: ca.Sign(t, "127.0.0.1"),
+			Certificate: certificate,
 			APIServer:   apiServer,
 			Config: multicluster.RaftConfiguration{
 				Name:              name,

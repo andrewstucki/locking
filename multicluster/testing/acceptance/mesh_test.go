@@ -1,10 +1,9 @@
 package acceptance
 
 import (
-	"fmt"
 	"testing"
 
-	mctesting "github.com/andrewstucki/locking/multicluster/testing"
+	"github.com/andrewstucki/locking/multicluster/bootstrap"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -13,19 +12,86 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestSetupClusters(t *testing.T) {
+func TestSetupMeshClusters(t *testing.T) {
 	image := HasImageOrBuild(t, "local/operator:dev", "../../..", "operator/Dockerfile", true)
 
-	clusters := SetupClusters(t, []string{"a", "b", "c"}, false)
+	clusters := SetupMeshClusters(t, []string{"a", "b", "c"}, false)
 	clusters.ImportImages(t, image)
 
-	peers := operatorPeerAddresses(clusters)
-	ca := mctesting.GenerateCA(t)
+	configuration := bootstrap.BootstrapClusterConfiguration{
+		OperatorNamespace: metav1.NamespaceDefault,
+		ServiceName:       "operator",
+		RemoteClusters: []bootstrap.RemoteConfiguration{{
+			ContextName:    clusters.Cluster(t, "a").ContextName(),
+			APIServer:      "https://" + clusters.Cluster(t, "a").IP(t) + ":6443",
+			ServiceAddress: clusters.Cluster(t, "a").RemoteName("operator"),
+		}, {
+			ContextName:    clusters.Cluster(t, "b").ContextName(),
+			APIServer:      "https://" + clusters.Cluster(t, "b").IP(t) + ":6443",
+			ServiceAddress: clusters.Cluster(t, "b").RemoteName("operator"),
+		}, {
+			ContextName:    clusters.Cluster(t, "c").ContextName(),
+			APIServer:      "https://" + clusters.Cluster(t, "c").IP(t) + ":6443",
+			ServiceAddress: clusters.Cluster(t, "c").RemoteName("operator"),
+		}},
+	}
 
-	configs := []*corev1.Secret{}
+	if err := bootstrap.BootstrapKubernetesClusters(t.Context(), "acceptance", configuration); err != nil {
+		t.Fatalf("error bootstrapping cluster: %v", err)
+	}
+
 	for _, cluster := range clusters {
-		configs = append(configs, cluster.ServiceAccountKubeconfig(t, "operator", metav1.NamespaceDefault))
-		cluster.Create(t, &rbacv1.ClusterRole{
+		cluster.Create(t, operatorDeploymentForCluster(configuration, cluster, image)...)
+	}
+
+	for _, cluster := range clusters {
+		cluster.Create(t, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "acceptance-test",
+				Namespace: metav1.NamespaceDefault,
+				Annotations: map[string]string{
+					"acceptance.testing/reconcile": "true",
+				},
+			},
+		})
+		cluster.WaitFor(t, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "acceptance-test",
+				Namespace: metav1.NamespaceDefault,
+			},
+		}, func(o client.Object) bool {
+			data := o.(*corev1.ConfigMap).Data
+			return data != nil && data["reconciled"] == "true"
+		})
+	}
+}
+
+func operatorDeploymentForCluster(configuration bootstrap.BootstrapClusterConfiguration, cluster *ConnectedCluster, image string) []client.Object {
+	peerVolumes := []corev1.Volume{}
+	peerVolumeMounts := []corev1.VolumeMount{}
+	peerArgs := []string{}
+	for _, cluster := range configuration.RemoteClusters {
+		name := configuration.ServiceName + "-" + cluster.ContextName
+		peerVolumes = append(peerVolumes, corev1.Volume{
+			Name: name + "-kubeconfig",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: name + "-kubeconfig",
+					Items: []corev1.KeyToPath{{
+						Key:  "kubeconfig.yaml",
+						Path: "kubeconfig.yaml",
+					}},
+				},
+			},
+		})
+		peerVolumeMounts = append(peerVolumeMounts, corev1.VolumeMount{
+			Name:      name + "-kubeconfig",
+			MountPath: "/config-" + name,
+		})
+		peerArgs = append(peerArgs, "--raft-peers", name+"://"+cluster.ServiceAddress+":9443/config-"+name+"/kubeconfig.yaml")
+	}
+	return []client.Object{
+		&rbacv1.ClusterRole{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "operator",
 				Namespace: metav1.NamespaceDefault,
@@ -50,113 +116,22 @@ func TestSetupClusters(t *testing.T) {
 				Name:     "operator",
 				Kind:     "ClusterRole",
 			},
-		})
-	}
-
-	for _, cluster := range clusters {
-		for _, config := range configs {
-			cluster.Create(t, config.DeepCopy())
-		}
-		cluster.Create(t, operatorDeploymentForCluster(t, ca, peers, cluster, image)...)
-		cluster.Create(t, &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "acceptance-test",
-				Namespace: metav1.NamespaceDefault,
-				Annotations: map[string]string{
-					"acceptance.testing/reconcile": "true",
-				},
-			},
-		})
-	}
-
-	for _, cluster := range clusters {
-		cluster.WaitFor(t, &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "acceptance-test",
-				Namespace: metav1.NamespaceDefault,
-			},
-		}, func(o client.Object) bool {
-			data := o.(*corev1.ConfigMap).Data
-			return data != nil && data["reconciled"] == "true"
-		})
-	}
-}
-
-type peerAddress struct {
-	name    string
-	address string
-}
-
-func operatorPeerAddresses(clusters ConnectedClusters) []peerAddress {
-	name := "operator"
-
-	peers := []peerAddress{}
-	for _, cluster := range clusters {
-		operatorName := name + "-" + cluster.Name
-		operatorFQDN := cluster.RemoteName(name)
-		peers = append(peers, peerAddress{
-			name:    operatorName,
-			address: fmt.Sprintf("%s:9443", operatorFQDN),
-		})
-	}
-
-	return peers
-}
-
-func operatorDeploymentForCluster(t *testing.T, ca mctesting.CACertificate, peers []peerAddress, cluster *ConnectedCluster, image string) []client.Object {
-	name := "operator"
-
-	peerVolumes := []corev1.Volume{}
-	peerVolumeMounts := []corev1.VolumeMount{}
-	peerArgs := []string{}
-	for _, peer := range peers {
-		peerVolumes = append(peerVolumes, corev1.Volume{
-			Name: peer.name + "-kubeconfig",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: peer.name + "-kubeconfig",
-					Items: []corev1.KeyToPath{{
-						Key:  "kubeconfig.yaml",
-						Path: "kubeconfig.yaml",
-					}},
-				},
-			},
-		})
-		peerVolumeMounts = append(peerVolumeMounts, corev1.VolumeMount{
-			Name:      peer.name + "-kubeconfig",
-			MountPath: "/config-" + peer.name,
-		})
-		peerArgs = append(peerArgs, "--raft-peers", peer.name+"://"+peer.address+"/config-"+peer.name+"/kubeconfig.yaml")
-	}
-
-	certificate := ca.Sign(t, cluster.DNSNames(name, metav1.NamespaceDefault)...)
-	return []client.Object{
-		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name + "-certificates",
-				Namespace: metav1.NamespaceDefault,
-			},
-			Data: map[string][]byte{
-				"ca.crt":  ca.Bytes(),
-				"tls.crt": certificate.Bytes(),
-				"tls.key": certificate.PrivateKeyBytes(),
-			},
 		},
 		&appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
+				Name:      configuration.ServiceName,
 				Namespace: metav1.NamespaceDefault,
 			},
 			Spec: appsv1.DeploymentSpec{
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
-						"app": name,
+						"app": configuration.ServiceName,
 					},
 				},
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
-							"app": name,
+							"app": configuration.ServiceName,
 						},
 						Annotations: map[string]string{
 							"linkerd.io/inject": "enabled",
@@ -165,29 +140,29 @@ func operatorDeploymentForCluster(t *testing.T, ca mctesting.CACertificate, peer
 					Spec: corev1.PodSpec{
 						ServiceAccountName: "operator",
 						Containers: []corev1.Container{{
-							Name:  name,
+							Name:  configuration.ServiceName,
 							Image: image,
 							Ports: []corev1.ContainerPort{{
 								Name:          "https",
 								ContainerPort: 9443,
 							}},
 							Args: append([]string{
-								"--raft-node-name", name + "-" + cluster.Name,
+								"--raft-node-name", configuration.ServiceName + "-" + cluster.ContextName(),
 								"--raft-node-address", "0.0.0.0:9443",
 								"--raft-ca-file", "/tls/ca.crt",
 								"--raft-certificate-file", "/tls/tls.crt",
 								"--raft-private-key-file", "/tls/tls.key",
 							}, peerArgs...),
 							VolumeMounts: append(peerVolumeMounts, []corev1.VolumeMount{{
-								Name:      name + "-certificates",
+								Name:      configuration.ServiceName + "-certificates",
 								MountPath: "/tls",
 							}}...),
 						}},
 						Volumes: append(peerVolumes, []corev1.Volume{{
-							Name: name + "-certificates",
+							Name: configuration.ServiceName + "-certificates",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: name + "-certificates",
+									SecretName: configuration.ServiceName + "-certificates",
 									Items: []corev1.KeyToPath{{
 										Key:  "ca.crt",
 										Path: "ca.crt",
@@ -208,14 +183,14 @@ func operatorDeploymentForCluster(t *testing.T, ca mctesting.CACertificate, peer
 		&corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: metav1.NamespaceDefault,
-				Name:      name,
+				Name:      configuration.ServiceName,
 				Labels: map[string]string{
 					"mirror.linkerd.io/exported": "true",
 				},
 			},
 			Spec: corev1.ServiceSpec{
 				Selector: map[string]string{
-					"app": name,
+					"app": configuration.ServiceName,
 				},
 				Type: corev1.ServiceTypeClusterIP,
 				Ports: []corev1.ServicePort{{
