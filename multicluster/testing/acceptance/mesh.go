@@ -131,7 +131,7 @@ func (c *ConnectedCluster) installLinkerd(t *testing.T) {
 }
 
 func (c *ConnectedCluster) linkCluster(t *testing.T, useIP bool, other *ConnectedCluster) {
-	ip := other.waitForIP(t)
+	ip := other.waitForMeshIP(t)
 
 	t.Logf("linking cluster %q with cluster %q", c.Name, other.Name)
 
@@ -183,11 +183,11 @@ func (c *ConnectedCluster) installLinkerdMultiCluster(t *testing.T) {
 	}
 }
 
-func (c *ConnectedCluster) IP(t *testing.T) string {
-	return c.waitForIP(t)
+func (c *ConnectedCluster) MeshIP(t *testing.T) string {
+	return c.waitForMeshIP(t)
 }
 
-func (c *ConnectedCluster) waitForIP(t *testing.T) string {
+func (c *ConnectedCluster) waitForMeshIP(t *testing.T) string {
 	t.Helper()
 
 	// wait up to 30 seconds

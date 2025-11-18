@@ -12,27 +12,27 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestSetupMeshClusters(t *testing.T) {
+func TestSetupClusters(t *testing.T) {
 	image := HasImageOrBuild(t, "local/operator:dev", "../../..", "operator/Dockerfile", false)
 
-	clusters := SetupMeshClusters(t, []string{"a", "b", "c"}, true)
+	clusters := SetupClusters(t, []string{"d", "e", "f"}, true)
 	clusters.ImportImages(t, image)
 
 	configuration := bootstrap.BootstrapClusterConfiguration{
 		OperatorNamespace: metav1.NamespaceDefault,
 		ServiceName:       "operator",
 		RemoteClusters: []bootstrap.RemoteConfiguration{{
-			ContextName:    clusters.Cluster(t, "a").ContextName(),
-			APIServer:      "https://" + clusters.Cluster(t, "a").MeshIP(t) + ":6443",
-			ServiceAddress: clusters.Cluster(t, "a").RemoteName("operator"),
+			ContextName:    clusters.Cluster(t, "d").ContextName(),
+			APIServer:      "https://" + clusters.Cluster(t, "d").IP(t) + ":6443",
+			ServiceAddress: clusters.Cluster(t, "d").IP(t),
 		}, {
-			ContextName:    clusters.Cluster(t, "b").ContextName(),
-			APIServer:      "https://" + clusters.Cluster(t, "b").MeshIP(t) + ":6443",
-			ServiceAddress: clusters.Cluster(t, "b").RemoteName("operator"),
+			ContextName:    clusters.Cluster(t, "e").ContextName(),
+			APIServer:      "https://" + clusters.Cluster(t, "e").IP(t) + ":6443",
+			ServiceAddress: clusters.Cluster(t, "e").IP(t),
 		}, {
-			ContextName:    clusters.Cluster(t, "c").ContextName(),
-			APIServer:      "https://" + clusters.Cluster(t, "c").MeshIP(t) + ":6443",
-			ServiceAddress: clusters.Cluster(t, "c").RemoteName("operator"),
+			ContextName:    clusters.Cluster(t, "f").ContextName(),
+			APIServer:      "https://" + clusters.Cluster(t, "f").IP(t) + ":6443",
+			ServiceAddress: clusters.Cluster(t, "f").IP(t),
 		}},
 	}
 
@@ -41,7 +41,7 @@ func TestSetupMeshClusters(t *testing.T) {
 	}
 
 	for _, cluster := range clusters {
-		cluster.Create(t, operatorDeploymentForMeshCluster(configuration, cluster, image)...)
+		cluster.Create(t, operatorDeploymentForCluster(configuration, cluster, image)...)
 	}
 
 	for _, cluster := range clusters {
@@ -66,7 +66,7 @@ func TestSetupMeshClusters(t *testing.T) {
 	}
 }
 
-func operatorDeploymentForMeshCluster(configuration bootstrap.BootstrapClusterConfiguration, cluster *ConnectedCluster, image string) []client.Object {
+func operatorDeploymentForCluster(configuration bootstrap.BootstrapClusterConfiguration, cluster *ConnectedCluster, image string) []client.Object {
 	peerVolumes := []corev1.Volume{}
 	peerVolumeMounts := []corev1.VolumeMount{}
 	peerArgs := []string{}
@@ -133,9 +133,6 @@ func operatorDeploymentForMeshCluster(configuration bootstrap.BootstrapClusterCo
 						Labels: map[string]string{
 							"app": configuration.ServiceName,
 						},
-						Annotations: map[string]string{
-							"linkerd.io/inject": "enabled",
-						},
 					},
 					Spec: corev1.PodSpec{
 						ServiceAccountName: "operator",
@@ -184,15 +181,12 @@ func operatorDeploymentForMeshCluster(configuration bootstrap.BootstrapClusterCo
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: metav1.NamespaceDefault,
 				Name:      configuration.ServiceName,
-				Labels: map[string]string{
-					"mirror.linkerd.io/exported": "true",
-				},
 			},
 			Spec: corev1.ServiceSpec{
 				Selector: map[string]string{
 					"app": configuration.ServiceName,
 				},
-				Type: corev1.ServiceTypeClusterIP,
+				Type: corev1.ServiceTypeLoadBalancer,
 				Ports: []corev1.ServicePort{{
 					Port:       9443,
 					TargetPort: intstr.FromString("https"),
