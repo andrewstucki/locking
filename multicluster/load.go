@@ -13,6 +13,10 @@ func loadKubeconfig(file string) (*rest.Config, error) {
 		return nil, err
 	}
 
+	return loadKubeconfigFromBytes(kubeconfigYAML)
+}
+
+func loadKubeconfigFromBytes(kubeconfigYAML []byte) (*rest.Config, error) {
 	kubeconfig, err := clientcmd.Load(kubeconfigYAML)
 	if err != nil {
 		return nil, err

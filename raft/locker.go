@@ -35,6 +35,8 @@ type LockConfiguration struct {
 	PrivateKey  []byte
 	Certificate []byte
 	Peers       []LockerNode
+	Insecure    bool
+	Fetcher     KubeconfigFetcher
 
 	ElectionTimeout   time.Duration
 	HeartbeatInterval time.Duration
@@ -48,14 +50,16 @@ func (c *LockConfiguration) validate() error {
 	if c.Address == "" {
 		return errors.New("address must be specified")
 	}
-	if len(c.CA) == 0 {
-		return errors.New("ca must be specified")
-	}
-	if len(c.PrivateKey) == 0 {
-		return errors.New("private key must be specified")
-	}
-	if len(c.Certificate) == 0 {
-		return errors.New("certificate must be specified")
+	if !c.Insecure {
+		if len(c.CA) == 0 {
+			return errors.New("ca must be specified")
+		}
+		if len(c.PrivateKey) == 0 {
+			return errors.New("private key must be specified")
+		}
+		if len(c.Certificate) == 0 {
+			return errors.New("certificate must be specified")
+		}
 	}
 	if len(c.Peers) == 0 {
 		return errors.New("peers must be set")
@@ -93,7 +97,13 @@ func Run(ctx context.Context, config LockConfiguration, callbacks *LeaderCallbac
 	}
 
 	nodes := peersForNodes(config.Peers)
-	transport, err := newGRPCTransport(config.Certificate, config.PrivateKey, config.CA, config.Address, nodes)
+	var transport *grpcTransport
+	var err error
+	if config.Insecure {
+		transport, err = newInsecureGRPCTransport(config.Address, nodes, config.Fetcher)
+	} else {
+		transport, err = newGRPCTransport(config.Certificate, config.PrivateKey, config.CA, config.Address, nodes, config.Fetcher)
+	}
 	if err != nil {
 		return err
 	}

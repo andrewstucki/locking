@@ -1,5 +1,5 @@
 
-{{- if (eq .Values.node "") }}{{- fail ".Values.node is required" }}{{- end }}
+{{- if (and (eq .Values.node "") (not .Values.insecure)) }}{{- fail ".Values.node is required" }}{{- end }}
 {{- if (eq (len .Values.peers) 0) }}{{- fail ".Values.peers is required" }}{{- end }}
 apiVersion: apps/v1
 kind: Deployment
@@ -25,20 +25,43 @@ spec:
           args:
             - "--raft-node-name={{ .Values.node }}"
             - "--raft-node-address=0.0.0.0:9443"
+            {{- if .Values.insecure }}
+            - "--raft-insecure"
+            {{- else }}
             - "--raft-ca-file=/tls/ca.crt"
             - "--raft-certificate-file=/tls/tls.crt"
             - "--raft-private-key-file=/tls/tls.key"
+            {{- end }}
+            {{- if .Values.bootstrap }}
+            - "--raft-bootstrap"
+            - "--raft-kubeconfig-name=operator"
+            {{- if (not (eq .Values.apiServer "")) }}
+            - "--raft-k8s-api-address={{ .Values.apiServer }}"
+            {{- end }}
+            {{- range $peer := .Values.peers }}
+            - "--raft-peers={{ $peer.name }}://{{ $peer.address }}:9443"
+            {{- end }}
+            {{- else }}
             {{- range $peer := .Values.peers }}
             - "--raft-peers={{ $peer.name }}://{{ $peer.address }}:9443/config-{{ $peer.name }}/kubeconfig.yaml"
             {{- end }}
+            {{- end }}
+          {{- if (or (not .Values.bootstrap) (not .Values.insecure)) }}
           volumeMounts:
+            {{- if (not .Values.bootstrap) }}
             {{- range $peer := .Values.peers }}
             - name: "operator-{{ $peer.context }}-kubeconfig"
               mountPath: "/config-{{ $peer.name }}"
             {{- end }}
+            {{- end }}
+            {{- if (not .Values.insecure) }}
             - name: "operator-certificates"
               mountPath: "/tls"
+            {{- end }}
+          {{- end }}
+      {{- if (or (not .Values.bootstrap) (not .Values.insecure)) }}
       volumes:
+        {{- if (not .Values.bootstrap) }}
         {{- range $peer := .Values.peers }}
         - name: "operator-{{ $peer.context }}-kubeconfig"
           secret:
@@ -47,6 +70,8 @@ spec:
               - key: "kubeconfig.yaml"
                 path: "kubeconfig.yaml"
         {{- end }}
+        {{- end }}
+        {{- if (not .Values.insecure) }}
         - name: "operator-certificates"
           secret:
             secretName: "operator-certificates"
@@ -57,3 +82,5 @@ spec:
                 path: "tls.crt"
               - key: "tls.key"
                 path: "tls.key"
+        {{- end }}
+      {{- end }}

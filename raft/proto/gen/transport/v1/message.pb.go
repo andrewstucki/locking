@@ -109,6 +109,86 @@ func (x *SendResponse) GetApplied() bool {
 	return false
 }
 
+type KubeconfigRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KubeconfigRequest) Reset() {
+	*x = KubeconfigRequest{}
+	mi := &file_transport_v1_message_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KubeconfigRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KubeconfigRequest) ProtoMessage() {}
+
+func (x *KubeconfigRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_transport_v1_message_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KubeconfigRequest.ProtoReflect.Descriptor instead.
+func (*KubeconfigRequest) Descriptor() ([]byte, []int) {
+	return file_transport_v1_message_proto_rawDescGZIP(), []int{2}
+}
+
+type KubeconfigResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Payload       []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KubeconfigResponse) Reset() {
+	*x = KubeconfigResponse{}
+	mi := &file_transport_v1_message_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KubeconfigResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KubeconfigResponse) ProtoMessage() {}
+
+func (x *KubeconfigResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_transport_v1_message_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KubeconfigResponse.ProtoReflect.Descriptor instead.
+func (*KubeconfigResponse) Descriptor() ([]byte, []int) {
+	return file_transport_v1_message_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *KubeconfigResponse) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
 var File_transport_v1_message_proto protoreflect.FileDescriptor
 
 const file_transport_v1_message_proto_rawDesc = "" +
@@ -117,9 +197,14 @@ const file_transport_v1_message_proto_rawDesc = "" +
 	"\vSendRequest\x12\x18\n" +
 	"\apayload\x18\x01 \x01(\fR\apayload\"(\n" +
 	"\fSendResponse\x12\x18\n" +
-	"\aapplied\x18\x01 \x01(\bR\aapplied2Q\n" +
+	"\aapplied\x18\x01 \x01(\bR\aapplied\"\x13\n" +
+	"\x11KubeconfigRequest\".\n" +
+	"\x12KubeconfigResponse\x12\x18\n" +
+	"\apayload\x18\x01 \x01(\fR\apayload2\xa2\x01\n" +
 	"\x10TransportService\x12=\n" +
-	"\x04Send\x12\x19.transport.v1.SendRequest\x1a\x1a.transport.v1.SendResponseB\xba\x01\n" +
+	"\x04Send\x12\x19.transport.v1.SendRequest\x1a\x1a.transport.v1.SendResponse\x12O\n" +
+	"\n" +
+	"Kubeconfig\x12\x1f.transport.v1.KubeconfigRequest\x1a .transport.v1.KubeconfigResponseB\xba\x01\n" +
 	"\x10com.transport.v1B\fMessageProtoP\x01ZGgithub.com/andrewstucki/locking/raft/proto/gen/transport/v1;transportv1\xa2\x02\x03TXX\xaa\x02\fTransport.V1\xca\x02\fTransport\\V1\xe2\x02\x18Transport\\V1\\GPBMetadata\xea\x02\rTransport::V1b\x06proto3"
 
 var (
@@ -134,16 +219,20 @@ func file_transport_v1_message_proto_rawDescGZIP() []byte {
 	return file_transport_v1_message_proto_rawDescData
 }
 
-var file_transport_v1_message_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_transport_v1_message_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_transport_v1_message_proto_goTypes = []any{
-	(*SendRequest)(nil),  // 0: transport.v1.SendRequest
-	(*SendResponse)(nil), // 1: transport.v1.SendResponse
+	(*SendRequest)(nil),        // 0: transport.v1.SendRequest
+	(*SendResponse)(nil),       // 1: transport.v1.SendResponse
+	(*KubeconfigRequest)(nil),  // 2: transport.v1.KubeconfigRequest
+	(*KubeconfigResponse)(nil), // 3: transport.v1.KubeconfigResponse
 }
 var file_transport_v1_message_proto_depIdxs = []int32{
 	0, // 0: transport.v1.TransportService.Send:input_type -> transport.v1.SendRequest
-	1, // 1: transport.v1.TransportService.Send:output_type -> transport.v1.SendResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	2, // 1: transport.v1.TransportService.Kubeconfig:input_type -> transport.v1.KubeconfigRequest
+	1, // 2: transport.v1.TransportService.Send:output_type -> transport.v1.SendResponse
+	3, // 3: transport.v1.TransportService.Kubeconfig:output_type -> transport.v1.KubeconfigResponse
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -160,7 +249,7 @@ func file_transport_v1_message_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_transport_v1_message_proto_rawDesc), len(file_transport_v1_message_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

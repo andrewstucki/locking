@@ -20,7 +20,7 @@ type managerI struct {
 	logger   logr.Logger
 }
 
-func newManager(logger logr.Logger, config *rest.Config, provider multicluster.Provider, getClusters func() map[string]cluster.Cluster, manager *locking.LeaderManager, opts manager.Options) (mcmanager.Manager, error) {
+func newManager(logger logr.Logger, config *rest.Config, provider multicluster.Provider, restart chan struct{}, getClusters func() map[string]cluster.Cluster, manager *locking.LeaderManager, opts manager.Options) (mcmanager.Manager, error) {
 	mgr, err := mcmanager.New(config, provider, opts)
 	if err != nil {
 		return nil, err
@@ -33,7 +33,7 @@ func newManager(logger logr.Logger, config *rest.Config, provider multicluster.P
 		return nil
 	})
 
-	runnable := &leaderRunnable{manager: manager, logger: logger, getClusters: getClusters}
+	runnable := &leaderRunnable{manager: manager, logger: logger, restart: restart, getClusters: getClusters}
 	if err := mgr.Add(runnable); err != nil {
 		return nil, err
 	}
@@ -58,21 +58,24 @@ type leaderRunnable struct {
 	runnables   []mcmanager.Runnable
 	manager     *locking.LeaderManager
 	logger      logr.Logger
+	restart     chan struct{}
 	getClusters func() map[string]cluster.Cluster
 }
 
 func (l *leaderRunnable) Add(r mcmanager.Runnable) {
-	for name, cluster := range l.getClusters() {
-		// engage any static clusters
-		_ = r.Engage(context.Background(), name, cluster)
+	doEngage := func() {
+		for name, cluster := range l.getClusters() {
+			// engage any static clusters
+			_ = r.Engage(context.Background(), name, cluster)
+		}
 	}
 
 	l.runnables = append(l.runnables, r)
 	if warmup, ok := r.(warmupRunnable); ok {
 		// start caches and sources
-		l.manager.RegisterRoutine(warmup.Warmup)
+		l.manager.RegisterRoutine(l.wrapStart(doEngage, warmup.Warmup))
 	}
-	l.manager.RegisterRoutine(r.Start)
+	l.manager.RegisterRoutine(l.wrapStart(doEngage, r.Start))
 }
 
 func (l *leaderRunnable) Engage(ctx context.Context, s string, c cluster.Cluster) error {
@@ -86,6 +89,28 @@ func (l *leaderRunnable) Engage(ctx context.Context, s string, c cluster.Cluster
 }
 
 func (l *leaderRunnable) Start(ctx context.Context) error {
-	l.logger.Info("starting leader election routine")
 	return l.manager.Run(ctx)
+}
+
+func (l *leaderRunnable) wrapStart(doEngage func(), fn func(context.Context) error) func(context.Context) error {
+	return func(ctx context.Context) error {
+		cancelCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		doEngage()
+
+		go func() {
+			for {
+				select {
+				case <-cancelCtx.Done():
+					return
+				case <-l.restart:
+					// re-engage
+					doEngage()
+				}
+			}
+		}()
+
+		return fn(cancelCtx)
+	}
 }

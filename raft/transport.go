@@ -11,9 +11,12 @@ import (
 	"go.etcd.io/raft/v3"
 	"go.etcd.io/raft/v3/raftpb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 
 	transportv1 "github.com/andrewstucki/locking/raft/proto/gen/transport/v1"
+	"google.golang.org/grpc/status"
 )
 
 type peer struct {
@@ -22,6 +25,9 @@ type peer struct {
 }
 
 func newPeer(addr string, credentials credentials.TransportCredentials) (*peer, error) {
+	if credentials == nil {
+		credentials = insecure.NewCredentials()
+	}
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(credentials))
 	if err != nil {
 		return nil, err
@@ -33,12 +39,45 @@ func newPeer(addr string, credentials credentials.TransportCredentials) (*peer, 
 	}, nil
 }
 
+func ClientFor(config LockConfiguration, node LockerNode) (transportv1.TransportServiceClient, error) {
+	var err error
+	var credentials credentials.TransportCredentials
+
+	if config.Insecure {
+		credentials = insecure.NewCredentials()
+	} else {
+		credentials, err = clientTLSConfig(config.CA, config.Certificate, config.PrivateKey)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to initialize client credentials: %w", err)
+	}
+
+	conn, err := grpc.NewClient(node.Address, grpc.WithTransportCredentials(credentials))
+	if err != nil {
+		return nil, err
+	}
+	return transportv1.NewTransportServiceClient(conn), nil
+}
+
+type KubeconfigFetcher interface {
+	Fetch(context.Context) ([]byte, error)
+}
+
+type KubeconfigFetcherFn func(context.Context) ([]byte, error)
+
+func (fn KubeconfigFetcherFn) Fetch(ctx context.Context) ([]byte, error) {
+	return fn(ctx)
+}
+
 type grpcTransport struct {
 	addr  string
 	peers map[uint64]*peer
 
 	node     raft.Node
 	nodeLock sync.RWMutex
+
+	kubeconfigFetcher KubeconfigFetcher
 
 	serverCredentials credentials.TransportCredentials
 	clientCredentials credentials.TransportCredentials
@@ -48,7 +87,7 @@ type grpcTransport struct {
 	transportv1.UnimplementedTransportServiceServer
 }
 
-func newGRPCTransport(certPEM, keyPEM, caPEM []byte, addr string, peers map[uint64]string) (*grpcTransport, error) {
+func newGRPCTransport(certPEM, keyPEM, caPEM []byte, addr string, peers map[uint64]string, fetcher KubeconfigFetcher) (*grpcTransport, error) {
 	serverCredentials, err := serverTLSConfig(certPEM, keyPEM, caPEM)
 	if err != nil {
 		return nil, fmt.Errorf("unable to initialize server credentials: %w", err)
@@ -72,6 +111,24 @@ func newGRPCTransport(certPEM, keyPEM, caPEM []byte, addr string, peers map[uint
 		peers:             initializedPeers,
 		serverCredentials: serverCredentials,
 		clientCredentials: clientCredentials,
+		kubeconfigFetcher: fetcher,
+	}, nil
+}
+
+func newInsecureGRPCTransport(addr string, peers map[uint64]string, fetcher KubeconfigFetcher) (*grpcTransport, error) {
+	initializedPeers := make(map[uint64]*peer, len(peers))
+	for id, peer := range peers {
+		initialized, err := newPeer(peer, nil)
+		if err != nil {
+			return nil, err
+		}
+		initializedPeers[id] = initialized
+	}
+
+	return &grpcTransport{
+		addr:              addr,
+		peers:             initializedPeers,
+		kubeconfigFetcher: fetcher,
 	}, nil
 }
 
@@ -121,10 +178,27 @@ func (t *grpcTransport) Send(ctx context.Context, req *transportv1.SendRequest) 
 	return &transportv1.SendResponse{Applied: false}, nil
 }
 
+func (t *grpcTransport) Kubeconfig(ctx context.Context, req *transportv1.KubeconfigRequest) (*transportv1.KubeconfigResponse, error) {
+	if t.kubeconfigFetcher == nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "no kubeconfig fetcher specified")
+	}
+	data, err := t.kubeconfigFetcher.Fetch(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, err.Error())
+	}
+
+	return &transportv1.KubeconfigResponse{Payload: data}, nil
+}
+
 func (t *grpcTransport) Run(ctx context.Context) error {
 	defer t.logger.Info("shutting down grpc transport")
 
-	server := grpc.NewServer(grpc.Creds(t.serverCredentials))
+	credentials := t.serverCredentials
+	if credentials == nil {
+		credentials = insecure.NewCredentials()
+	}
+
+	server := grpc.NewServer(grpc.Creds(credentials))
 	transportv1.RegisterTransportServiceServer(server, t)
 
 	lis, err := net.Listen("tcp", t.addr)

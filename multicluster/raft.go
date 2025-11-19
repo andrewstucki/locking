@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/andrewstucki/locking"
+	"github.com/andrewstucki/locking/multicluster/bootstrap"
 	"github.com/andrewstucki/locking/raft"
+	transportv1 "github.com/andrewstucki/locking/raft/proto/gen/transport/v1"
 	"github.com/go-logr/logr"
 	flag "github.com/spf13/pflag"
 	raftv4 "go.etcd.io/raft/v3"
@@ -42,6 +44,7 @@ type RaftConfiguration struct {
 	CAFile            string
 	PrivateKeyFile    string
 	CertificateFile   string
+	Insecure          bool
 	Scheme            *runtime.Scheme
 	Peers             []RaftCluster
 	ElectionTimeout   time.Duration
@@ -49,6 +52,12 @@ type RaftConfiguration struct {
 	Logger            logr.Logger
 	Metrics           bool
 	RestConfig        *rest.Config
+
+	// these are used when bootstrapping mode is enabled
+	Bootstrap           bool
+	KubernetesAPIServer string
+	KubeconfigNamespace string
+	KubeconfigName      string
 }
 
 func (r RaftConfiguration) validate() error {
@@ -58,14 +67,16 @@ func (r RaftConfiguration) validate() error {
 	if r.Address == "" {
 		return errors.New("address must be specified")
 	}
-	if len(r.CAFile) == 0 {
-		return errors.New("ca must be specified")
-	}
-	if len(r.PrivateKeyFile) == 0 {
-		return errors.New("private key must be specified")
-	}
-	if len(r.CertificateFile) == 0 {
-		return errors.New("certificate must be specified")
+	if !r.Insecure {
+		if len(r.CAFile) == 0 {
+			return errors.New("ca must be specified")
+		}
+		if len(r.PrivateKeyFile) == 0 {
+			return errors.New("private key must be specified")
+		}
+		if len(r.CertificateFile) == 0 {
+			return errors.New("certificate must be specified")
+		}
 	}
 	if len(r.Peers) == 0 {
 		return errors.New("peers must be set")
@@ -82,17 +93,22 @@ var (
 func AddRaftConfigurationFlags(set *flag.FlagSet) {
 	set.StringVar(&cliRaftConfiguration.Name, "raft-node-name", "", "raft node name")
 	set.StringVar(&cliRaftConfiguration.Address, "raft-node-address", "", "raft node address")
+	set.BoolVar(&cliRaftConfiguration.Insecure, "raft-insecure", false, "raft no tls")
 	set.StringVar(&cliRaftConfiguration.CAFile, "raft-ca-file", "", "raft ca file")
 	set.StringVar(&cliRaftConfiguration.PrivateKeyFile, "raft-private-key-file", "", "raft private key file")
 	set.StringVar(&cliRaftConfiguration.CertificateFile, "raft-certificate-file", "", "raft certificate file")
 	set.DurationVar(&cliRaftConfiguration.ElectionTimeout, "raft-election-timeout", 10*time.Second, "raft election timeout")
 	set.DurationVar(&cliRaftConfiguration.HeartbeatInterval, "raft-heartbeat-interval", 1*time.Second, "raft heartbeat interval")
 	set.StringSliceVar(&cliRaftConfigurationPeers, "raft-peers", []string{}, "raft peers")
+	set.BoolVar(&cliRaftConfiguration.Bootstrap, "raft-bootstrap", false, "raft internally bootstrap kubeconfigs")
+	set.StringVar(&cliRaftConfiguration.KubernetesAPIServer, "raft-k8s-api-address", "", "raft kubernetes api server address")
+	set.StringVar(&cliRaftConfiguration.KubeconfigNamespace, "raft-kubeconfig-namespace", "default", "raft kubeconfig namespace")
+	set.StringVar(&cliRaftConfiguration.KubeconfigName, "raft-kubeconfig-name", "multicluster-kubeconfig", "raft kubeconfig name")
 }
 
 func RaftConfigurationFromFlags() (RaftConfiguration, error) {
 	for _, peer := range cliRaftConfigurationPeers {
-		cluster, err := peerFromFlag(peer)
+		cluster, err := peerFromFlag(cliRaftConfiguration, peer)
 		if err != nil {
 			return RaftConfiguration{}, err
 		}
@@ -102,9 +118,9 @@ func RaftConfigurationFromFlags() (RaftConfiguration, error) {
 	return cliRaftConfiguration, nil
 }
 
-func peerFromFlag(value string) (RaftCluster, error) {
+func peerFromFlag(configuration RaftConfiguration, value string) (RaftCluster, error) {
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.Path == "" {
+	if err != nil || (!configuration.Bootstrap && parsed.Path == "") {
 		return RaftCluster{}, errors.New("format of peer flag is name://address/path/to/kubeconfig")
 	}
 	return RaftCluster{
@@ -148,44 +164,59 @@ func NewRaftRuntimeManager(config RaftConfiguration) (mcmanager.Manager, error) 
 			continue
 		}
 
-		kubeConfig, err := loadKubeconfig(peer.KubeconfigFile)
-		if err != nil {
-			return nil, err
+		if peer.KubeconfigFile != "" {
+			kubeConfig, err := loadKubeconfig(peer.KubeconfigFile)
+			if err != nil {
+				return nil, err
+			}
+			c, err := cluster.New(kubeConfig)
+			if err != nil {
+				return nil, err
+			}
+			if err := clusterProvider.Add(context.Background(), peer.Name, c, nil); err != nil {
+				return nil, err
+			}
 		}
-		c, err := cluster.New(kubeConfig)
-		if err != nil {
-			return nil, err
-		}
-		if err := clusterProvider.Add(context.Background(), peer.Name, c, nil); err != nil {
-			return nil, err
-		}
-	}
-
-	caBytes, err := os.ReadFile(config.CAFile)
-	if err != nil {
-		return nil, err
-	}
-
-	certBytes, err := os.ReadFile(config.CertificateFile)
-	if err != nil {
-		return nil, err
-	}
-
-	keyBytes, err := os.ReadFile(config.PrivateKeyFile)
-	if err != nil {
-		return nil, err
 	}
 
 	raftConfig := raft.LockConfiguration{
 		ID:                stringToHash(config.Name),
 		Address:           config.Address,
-		CA:                caBytes,
-		Certificate:       certBytes,
-		PrivateKey:        keyBytes,
 		Peers:             raftPeers,
+		Insecure:          config.Insecure,
 		ElectionTimeout:   config.ElectionTimeout,
 		HeartbeatInterval: config.HeartbeatInterval,
 		Logger:            &raftLogr{logger: config.Logger},
+	}
+
+	if config.Bootstrap {
+		raftConfig.Fetcher = raft.KubeconfigFetcherFn(func(ctx context.Context) ([]byte, error) {
+			return bootstrap.CreateRemoteKubeconfig(ctx, &bootstrap.RemoteKubernetesConfiguration{
+				RESTConfig: restConfig,
+				APIServer:  config.KubernetesAPIServer,
+				Namespace:  config.KubeconfigNamespace,
+				Name:       config.KubeconfigName,
+			})
+		})
+	}
+
+	if !config.Insecure {
+		var err error
+
+		raftConfig.CA, err = os.ReadFile(config.CAFile)
+		if err != nil {
+			return nil, err
+		}
+
+		raftConfig.Certificate, err = os.ReadFile(config.CertificateFile)
+		if err != nil {
+			return nil, err
+		}
+
+		raftConfig.PrivateKey, err = os.ReadFile(config.PrivateKeyFile)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	opts := manager.Options{
@@ -199,7 +230,59 @@ func NewRaftRuntimeManager(config RaftConfiguration) (mcmanager.Manager, error) 
 		}
 	}
 
-	manager, err := newManager(config.Logger, restConfig, clusterProvider, func() map[string]cluster.Cluster {
+	lockManager := locking.NewRaftLockManager(raftConfig)
+
+	restart := make(chan struct{}, 1)
+
+	if config.Bootstrap {
+		for i, peer := range config.Peers {
+			if peer.Name != config.Name && peer.KubeconfigFile == "" {
+				config.Logger.Info("registering leader routine", "peer", peer.Name)
+				lockManager.RegisterRoutine(func(ctx context.Context) error {
+					config.Logger.Info("fetching client for peer", "peer", peer.Name)
+					client, err := raft.ClientFor(raftConfig, raftConfig.Peers[i])
+					if err != nil {
+						config.Logger.Error(err, "fetching client for peer", "peer", peer.Name)
+						return err
+					}
+					config.Logger.Info("fetching kubeconfig for peer", "peer", peer.Name)
+					response, err := client.Kubeconfig(ctx, &transportv1.KubeconfigRequest{})
+					if err != nil {
+						config.Logger.Error(err, "fetching kubeconfig for peer", "peer", peer.Name)
+						return err
+					}
+
+					config.Logger.Info("loading kubeconfig for peer", "peer", peer.Name)
+					kubeConfig, err := loadKubeconfigFromBytes(response.Payload)
+					if err != nil {
+						config.Logger.Error(err, "loading kubeconfig for peer", "peer", peer.Name)
+						return err
+					}
+					config.Logger.Info("initializing cluster for peer", "peer", peer.Name)
+					c, err := cluster.New(kubeConfig)
+					if err != nil {
+						config.Logger.Error(err, "initializing cluster for peer", "peer", peer.Name)
+						return err
+					}
+
+					config.Logger.Info("adding cluster for peer", "peer", peer.Name)
+					if err := clusterProvider.AddOrReplace(ctx, peer.Name, c, nil); err != nil {
+						config.Logger.Error(err, "adding cluster for peer", "peer", peer.Name)
+						return err
+					}
+					select {
+					case restart <- struct{}{}:
+					default:
+					}
+
+					<-ctx.Done()
+					return nil
+				})
+			}
+		}
+	}
+
+	manager, err := newManager(config.Logger, restConfig, clusterProvider, restart, func() map[string]cluster.Cluster {
 		clusters := map[string]cluster.Cluster{}
 		for _, name := range clusterProvider.ClusterNames() {
 			if c, err := clusterProvider.Get(context.Background(), name); err == nil {
@@ -207,7 +290,7 @@ func NewRaftRuntimeManager(config RaftConfiguration) (mcmanager.Manager, error) 
 			}
 		}
 		return clusters
-	}, locking.NewRaftLockManager(raftConfig), opts)
+	}, lockManager, opts)
 	if err != nil {
 		return nil, err
 	}

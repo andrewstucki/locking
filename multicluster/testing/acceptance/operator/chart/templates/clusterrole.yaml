@@ -6,3 +6,11 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["watch", "list", "get", "update"]
+{{- if .Values.bootstrap }}
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["create", "get", "update"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "get", "update"]
+{{- end }}

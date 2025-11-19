@@ -10,6 +10,13 @@ message SendResponse {
   bool applied = 1;
 }
 
+message KubeconfigRequest {}
+
+message KubeconfigResponse {
+  bytes payload = 1;
+}
+
 service TransportService {
   rpc Send(SendRequest) returns (SendResponse);
+  rpc Kubeconfig(KubeconfigRequest) returns (KubeconfigResponse);
 }

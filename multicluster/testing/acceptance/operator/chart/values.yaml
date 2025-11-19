@@ -4,3 +4,6 @@ image:
 
 node: ""
 peers: []
+insecure: false
+bootstrap: false
+apiServer: ""
