@@ -25,7 +25,7 @@ tasks:
       RIGHT_IP:
         sh: kubectl get svc --context k3d-right -n kube-system traefik --template {{ "'{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}'" }}
     cmds:
-      - multicluster/testing/acceptance/operator/manager bootstrap --bootstrap-context k3d-left --bootstrap-context k3d-right --bootstrap-context k3d-middle --bootstrap-service-address k3d-left://{{ .LEFT_IP }} --bootstrap-service-address k3d-right://{{ .RIGHT_IP }} --bootstrap-service-address k3d-middle://{{ .MIDDLE_IP }} --bootstrap-server-address k3d-left+https://{{ .LEFT_IP }}:6443 --bootstrap-server-address k3d-right+https://{{ .RIGHT_IP }}:6443 --bootstrap-server-address k3d-middle+https://{{ .MIDDLE_IP }}:6443
+      - multicluster/testing/acceptance/operator/manager bootstrap --bootstrap-tls --bootstrap-kubeconfigs --bootstrap-context k3d-left --bootstrap-context k3d-right --bootstrap-context k3d-middle --bootstrap-service-address k3d-left://{{ .LEFT_IP }} --bootstrap-service-address k3d-right://{{ .RIGHT_IP }} --bootstrap-service-address k3d-middle://{{ .MIDDLE_IP }} --bootstrap-server-address k3d-left+https://{{ .LEFT_IP }}:6443 --bootstrap-server-address k3d-right+https://{{ .RIGHT_IP }}:6443 --bootstrap-server-address k3d-middle+https://{{ .MIDDLE_IP }}:6443
 
   deploy-dev:
     vars:
@@ -39,6 +39,43 @@ tasks:
       - helm install operator --kube-context k3d-left multicluster/testing/acceptance/operator/chart --set node=left --set peers[0].name="left" --set peers[0].address="{{ .LEFT_IP }}" --set peers[0].context="k3d-left" --set peers[1].name="right" --set peers[1].address="{{ .RIGHT_IP }}" --set peers[1].context="k3d-right" --set peers[2].name="middle" --set peers[2].address="{{ .MIDDLE_IP }}" --set peers[2].context="k3d-middle"
       - helm install operator --kube-context k3d-right multicluster/testing/acceptance/operator/chart --set node=right --set peers[0].name="left" --set peers[0].address="{{ .LEFT_IP }}" --set peers[0].context="k3d-left" --set peers[1].name="right" --set peers[1].address="{{ .RIGHT_IP }}" --set peers[1].context="k3d-right" --set peers[2].name="middle" --set peers[2].address="{{ .MIDDLE_IP }}" --set peers[2].context="k3d-middle"
       - helm install operator --kube-context k3d-middle multicluster/testing/acceptance/operator/chart --set node=middle --set peers[0].name="left" --set peers[0].address="{{ .LEFT_IP }}" --set peers[0].context="k3d-left" --set peers[1].name="right" --set peers[1].address="{{ .RIGHT_IP }}" --set peers[1].context="k3d-right" --set peers[2].name="middle" --set peers[2].address="{{ .MIDDLE_IP }}" --set peers[2].context="k3d-middle"
+
+  bootstrap-tls-dev:
+    vars:
+      LEFT_IP:
+        sh: kubectl get svc --context k3d-left -n kube-system traefik --template {{ "'{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}'" }}
+      MIDDLE_IP:
+        sh: kubectl get svc --context k3d-middle -n kube-system traefik --template {{ "'{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}'" }}
+      RIGHT_IP:
+        sh: kubectl get svc --context k3d-right -n kube-system traefik --template {{ "'{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}'" }}
+    cmds:
+      - multicluster/testing/acceptance/operator/manager bootstrap --bootstrap-tls --bootstrap-context k3d-left --bootstrap-context k3d-right --bootstrap-context k3d-middle --bootstrap-service-address k3d-left://{{ .LEFT_IP }} --bootstrap-service-address k3d-right://{{ .RIGHT_IP }} --bootstrap-service-address k3d-middle://{{ .MIDDLE_IP }}
+
+  deploy-dev:
+    vars:
+      LEFT_IP:
+        sh: kubectl get svc --context k3d-left -n kube-system traefik --template {{ "'{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}'" }}
+      MIDDLE_IP:
+        sh: kubectl get svc --context k3d-middle -n kube-system traefik --template {{ "'{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}'" }}
+      RIGHT_IP:
+        sh: kubectl get svc --context k3d-right -n kube-system traefik --template {{ "'{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}'" }}
+    cmds:
+      - helm install operator --kube-context k3d-left multicluster/testing/acceptance/operator/chart --set node=left --set peers[0].name="left" --set peers[0].address="{{ .LEFT_IP }}" --set peers[0].context="k3d-left" --set peers[1].name="right" --set peers[1].address="{{ .RIGHT_IP }}" --set peers[1].context="k3d-right" --set peers[2].name="middle" --set peers[2].address="{{ .MIDDLE_IP }}" --set peers[2].context="k3d-middle"
+      - helm install operator --kube-context k3d-right multicluster/testing/acceptance/operator/chart --set node=right --set peers[0].name="left" --set peers[0].address="{{ .LEFT_IP }}" --set peers[0].context="k3d-left" --set peers[1].name="right" --set peers[1].address="{{ .RIGHT_IP }}" --set peers[1].context="k3d-right" --set peers[2].name="middle" --set peers[2].address="{{ .MIDDLE_IP }}" --set peers[2].context="k3d-middle"
+      - helm install operator --kube-context k3d-middle multicluster/testing/acceptance/operator/chart --set node=middle --set peers[0].name="left" --set peers[0].address="{{ .LEFT_IP }}" --set peers[0].context="k3d-left" --set peers[1].name="right" --set peers[1].address="{{ .RIGHT_IP }}" --set peers[1].context="k3d-right" --set peers[2].name="middle" --set peers[2].address="{{ .MIDDLE_IP }}" --set peers[2].context="k3d-middle"
+
+  deploy-tls-dev:
+    vars:
+      LEFT_IP:
+        sh: kubectl get svc --context k3d-left -n kube-system traefik --template {{ "'{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}'" }}
+      MIDDLE_IP:
+        sh: kubectl get svc --context k3d-middle -n kube-system traefik --template {{ "'{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}'" }}
+      RIGHT_IP:
+        sh: kubectl get svc --context k3d-right -n kube-system traefik --template {{ "'{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}'" }}
+    cmds:
+      - helm install operator --kube-context k3d-left multicluster/testing/acceptance/operator/chart --set node=left --set apiServer=https://{{ .LEFT_IP }}:6443 --set peers[0].name="left" --set peers[0].address="{{ .LEFT_IP }}" --set peers[1].name="right" --set peers[1].address="{{ .RIGHT_IP }}" --set peers[2].name="middle" --set peers[2].address="{{ .MIDDLE_IP }}" --set bootstrap=true
+      - helm install operator --kube-context k3d-right multicluster/testing/acceptance/operator/chart --set node=right --set apiServer=https://{{ .RIGHT_IP }}:6443 --set peers[0].name="left" --set peers[0].address="{{ .LEFT_IP }}" --set peers[1].name="right" --set peers[1].address="{{ .RIGHT_IP }}" --set peers[2].name="middle" --set peers[2].address="{{ .MIDDLE_IP }}" --set bootstrap=true
+      - helm install operator --kube-context k3d-middle multicluster/testing/acceptance/operator/chart --set node=middle --set apiServer=https://{{ .MIDDLE_IP }}:6443 --set peers[0].name="left" --set peers[0].address="{{ .LEFT_IP }}" --set peers[1].name="right" --set peers[1].address="{{ .RIGHT_IP }}" --set peers[2].name="middle" --set peers[2].address="{{ .MIDDLE_IP }}" --set bootstrap=true
 
   deploy-insecure-bootstrap-dev:
     vars:

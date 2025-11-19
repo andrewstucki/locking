@@ -46,7 +46,7 @@ func ClientFor(config LockConfiguration, node LockerNode) (transportv1.Transport
 	if config.Insecure {
 		credentials = insecure.NewCredentials()
 	} else {
-		credentials, err = clientTLSConfig(config.CA, config.Certificate, config.PrivateKey)
+		credentials, err = clientTLSConfig(config.Certificate, config.PrivateKey, config.CA)
 	}
 
 	if err != nil {

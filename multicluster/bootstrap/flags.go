@@ -22,6 +22,8 @@ func AddBootstrapConfigurationFlags(set *flag.FlagSet) {
 	set.StringSliceVar(&cliContexts, "bootstrap-context", []string{}, "operator contexts")
 	set.StringSliceVar(&cliServiceAddressOverrides, "bootstrap-service-address", []string{}, "operator service address overrides")
 	set.StringSliceVar(&cliAPIServerOverrides, "bootstrap-server-address", []string{}, "operator kubernetes server address overrides")
+	set.BoolVar(&cliBootstrapClusterConfiguration.BootstrapKubeconfigs, "bootstrap-kubeconfigs", false, "operator bootstrap kubeconfigs")
+	set.BoolVar(&cliBootstrapClusterConfiguration.BootstrapTLS, "bootstrap-tls", false, "operator bootstrap tls")
 }
 
 func ConfigurationFromFlags() (BootstrapClusterConfiguration, error) {

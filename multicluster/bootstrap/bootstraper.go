@@ -48,9 +48,11 @@ func (r RemoteConfiguration) FQDN(c BootstrapClusterConfiguration) (string, erro
 }
 
 type BootstrapClusterConfiguration struct {
-	OperatorNamespace string
-	ServiceName       string
-	RemoteClusters    []RemoteConfiguration
+	BootstrapTLS         bool
+	BootstrapKubeconfigs bool
+	OperatorNamespace    string
+	ServiceName          string
+	RemoteClusters       []RemoteConfiguration
 }
 
 func BootstrapKubernetesClusters(ctx context.Context, organization string, configuration BootstrapClusterConfiguration) error {
@@ -62,51 +64,58 @@ func BootstrapKubernetesClusters(ctx context.Context, organization string, confi
 	kubeconfigs := [][]byte{}
 	certificates := []*Certificate{}
 	for _, cluster := range configuration.RemoteClusters {
-		address, err := cluster.Address()
-		if err != nil {
-			return err
+		if configuration.BootstrapKubeconfigs {
+			address, err := cluster.Address()
+			if err != nil {
+				return err
+			}
+			config, err := CreateRemoteKubeconfig(ctx, &RemoteKubernetesConfiguration{
+				ContextName: cluster.ContextName,
+				Namespace:   configuration.OperatorNamespace,
+				Name:        configuration.ServiceName,
+				APIServer:   address,
+			})
+			if err != nil {
+				return err
+			}
+			kubeconfigs = append(kubeconfigs, config)
 		}
-		serviceFQDN, err := cluster.FQDN(configuration)
-		if err != nil {
-			return err
+		if configuration.BootstrapTLS {
+			serviceFQDN, err := cluster.FQDN(configuration)
+			if err != nil {
+				return err
+			}
+			certificate, err := caCertificate.Sign(serviceFQDN)
+			if err != nil {
+				return err
+			}
+			certificates = append(certificates, certificate)
 		}
-		certificate, err := caCertificate.Sign(serviceFQDN)
-		if err != nil {
-			return err
-		}
-		config, err := CreateRemoteKubeconfig(ctx, &RemoteKubernetesConfiguration{
-			ContextName: cluster.ContextName,
-			Namespace:   configuration.OperatorNamespace,
-			Name:        configuration.ServiceName,
-			APIServer:   address,
-		})
-		if err != nil {
-			return err
-		}
-		certificates = append(certificates, certificate)
-		kubeconfigs = append(kubeconfigs, config)
 	}
 
 	for i, cluster := range configuration.RemoteClusters {
-		certificate := certificates[i]
-		for i := range certificates {
-			kubeconfig := kubeconfigs[i]
+		if configuration.BootstrapKubeconfigs {
+			for i := range kubeconfigs {
+				kubeconfig := kubeconfigs[i]
 
-			if err := CreateKubeconfigSecret(ctx, kubeconfig, &RemoteKubernetesConfiguration{
+				if err := CreateKubeconfigSecret(ctx, kubeconfig, &RemoteKubernetesConfiguration{
+					ContextName: cluster.ContextName,
+					Namespace:   configuration.OperatorNamespace,
+					Name:        configuration.ServiceName + "-" + configuration.RemoteClusters[i].ContextName,
+				}); err != nil {
+					return err
+				}
+			}
+		}
+		if configuration.BootstrapTLS {
+			certificate := certificates[i]
+			if err := CreateTLSSecret(ctx, caCertificate, certificate, &RemoteKubernetesConfiguration{
 				ContextName: cluster.ContextName,
 				Namespace:   configuration.OperatorNamespace,
-				Name:        configuration.ServiceName + "-" + configuration.RemoteClusters[i].ContextName,
+				Name:        configuration.ServiceName,
 			}); err != nil {
 				return err
 			}
-		}
-
-		if err := CreateTLSSecret(ctx, caCertificate, certificate, &RemoteKubernetesConfiguration{
-			ContextName: cluster.ContextName,
-			Namespace:   configuration.OperatorNamespace,
-			Name:        configuration.ServiceName,
-		}); err != nil {
-			return err
 		}
 	}
 
