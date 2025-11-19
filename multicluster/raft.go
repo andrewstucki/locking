@@ -200,8 +200,6 @@ func NewRaftRuntimeManager(config RaftConfiguration) (Manager, error) {
 				Name:       config.KubeconfigName,
 			})
 
-			config.Logger.Info("generated kubeconfig", "kubeconfig", string(data))
-
 			if err != nil {
 				return nil, err
 			}
