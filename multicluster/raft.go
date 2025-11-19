@@ -22,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 	"sigs.k8s.io/multicluster-runtime/providers/clusters"
 )
 
@@ -133,7 +132,7 @@ func peerFromFlag(configuration RaftConfiguration, value string) (RaftCluster, e
 	}, nil
 }
 
-func NewRaftRuntimeManager(config RaftConfiguration) (mcmanager.Manager, error) {
+func NewRaftRuntimeManager(config RaftConfiguration) (Manager, error) {
 	if err := config.validate(); err != nil {
 		return nil, err
 	}

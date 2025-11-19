@@ -2,6 +2,7 @@ package multicluster
 
 import (
 	"context"
+	"sort"
 
 	"github.com/andrewstucki/locking"
 	"github.com/go-logr/logr"
@@ -14,13 +15,32 @@ import (
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 )
 
-type managerI struct {
+type Manager interface {
 	mcmanager.Manager
-	runnable *leaderRunnable
-	logger   logr.Logger
+	GetClusterNames() []string
 }
 
-func newManager(logger logr.Logger, config *rest.Config, provider multicluster.Provider, restart chan struct{}, getClusters func() map[string]cluster.Cluster, manager *locking.LeaderManager, opts manager.Options) (mcmanager.Manager, error) {
+type managerI struct {
+	mcmanager.Manager
+	runnable    *leaderRunnable
+	logger      logr.Logger
+	getClusters func() map[string]cluster.Cluster
+}
+
+func (m *managerI) GetClusterNames() []string {
+	clusters := []string{mcmanager.LocalCluster}
+	if m.getClusters == nil {
+		return clusters
+	}
+
+	for cluster := range m.getClusters() {
+		clusters = append(clusters, cluster)
+	}
+	sort.Strings(clusters)
+	return clusters
+}
+
+func newManager(logger logr.Logger, config *rest.Config, provider multicluster.Provider, restart chan struct{}, getClusters func() map[string]cluster.Cluster, manager *locking.LeaderManager, opts manager.Options) (Manager, error) {
 	mgr, err := mcmanager.New(config, provider, opts)
 	if err != nil {
 		return nil, err
