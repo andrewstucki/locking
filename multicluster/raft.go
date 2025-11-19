@@ -261,7 +261,10 @@ func NewRaftRuntimeManager(config RaftConfiguration) (Manager, error) {
 						return err
 					}
 					config.Logger.Info("initializing cluster for peer", "peer", peer.Name)
-					c, err := cluster.New(kubeConfig)
+					c, err := cluster.New(kubeConfig, func(o *cluster.Options) {
+						o.Scheme = config.Scheme
+						o.Logger = config.Logger
+					})
 					if err != nil {
 						config.Logger.Error(err, "initializing cluster for peer", "peer", peer.Name)
 						return err
