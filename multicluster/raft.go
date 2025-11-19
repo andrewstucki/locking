@@ -292,6 +292,15 @@ func NewRaftRuntimeManager(config RaftConfiguration) (Manager, error) {
 			}
 		}
 		return clusters
+	}, func(ctx context.Context, clusterName string, cl cluster.Cluster) error {
+		if err := clusterProvider.AddOrReplace(ctx, clusterName, cl, nil); err != nil {
+			return err
+		}
+		select {
+		case restart <- struct{}{}:
+		default:
+		}
+		return nil
 	}, lockManager, opts)
 	if err != nil {
 		return nil, err

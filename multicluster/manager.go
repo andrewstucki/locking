@@ -18,13 +18,20 @@ import (
 type Manager interface {
 	mcmanager.Manager
 	GetClusterNames() []string
+	// the context passed here, when canceled will stop the cluster
+	AddOrReplaceCluster(ctx context.Context, clusterName string, cl cluster.Cluster) error
 }
 
 type managerI struct {
 	mcmanager.Manager
-	runnable    *leaderRunnable
-	logger      logr.Logger
-	getClusters func() map[string]cluster.Cluster
+	runnable            *leaderRunnable
+	logger              logr.Logger
+	getClusters         func() map[string]cluster.Cluster
+	addOrReplaceCluster func(ctx context.Context, clusterName string, cl cluster.Cluster) error
+}
+
+func (m *managerI) AddOrReplaceCluster(ctx context.Context, clusterName string, cl cluster.Cluster) error {
+	return m.addOrReplaceCluster(ctx, clusterName, cl)
 }
 
 func (m *managerI) GetClusterNames() []string {
@@ -40,7 +47,7 @@ func (m *managerI) GetClusterNames() []string {
 	return clusters
 }
 
-func newManager(logger logr.Logger, config *rest.Config, provider multicluster.Provider, restart chan struct{}, getClusters func() map[string]cluster.Cluster, manager *locking.LeaderManager, opts manager.Options) (Manager, error) {
+func newManager(logger logr.Logger, config *rest.Config, provider multicluster.Provider, restart chan struct{}, getClusters func() map[string]cluster.Cluster, addOrReplaceCluster func(ctx context.Context, clusterName string, cl cluster.Cluster) error, manager *locking.LeaderManager, opts manager.Options) (Manager, error) {
 	mgr, err := mcmanager.New(config, provider, opts)
 	if err != nil {
 		return nil, err
@@ -57,12 +64,18 @@ func newManager(logger logr.Logger, config *rest.Config, provider multicluster.P
 	if err := mgr.Add(runnable); err != nil {
 		return nil, err
 	}
-	return &managerI{Manager: mgr, runnable: runnable, logger: logger}, nil
+	return &managerI{Manager: mgr, runnable: runnable, logger: logger, getClusters: getClusters, addOrReplaceCluster: addOrReplaceCluster}, nil
 }
 
 func (m *managerI) Add(r mcmanager.Runnable) error {
 	if _, ok := r.(reconcile.TypedReconciler[mcreconcile.Request]); ok {
 		m.logger.Info("adding multicluster reconciler")
+		m.runnable.Add(r)
+		return nil
+	}
+
+	if _, ok := r.(manager.LeaderElectionRunnable); ok {
+		m.logger.Info("adding leader election runnable")
 		m.runnable.Add(r)
 		return nil
 	}
