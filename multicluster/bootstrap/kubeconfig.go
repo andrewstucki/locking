@@ -24,11 +24,12 @@ const (
 )
 
 type RemoteKubernetesConfiguration struct {
-	ContextName string
-	Namespace   string
-	Name        string
-	APIServer   string
-	RESTConfig  *rest.Config
+	ContextName     string
+	Namespace       string
+	Name            string
+	APIServer       string
+	RESTConfig      *rest.Config
+	EnsureNamespace bool
 }
 
 func configFromContext(contextName string) (*rest.Config, error) {
@@ -62,6 +63,12 @@ func CreateKubeconfigSecret(ctx context.Context, data []byte, configuration *Rem
 	cl, err := client.New(configuration.RESTConfig, client.Options{})
 	if err != nil {
 		return fmt.Errorf("initializing client: %v", err)
+	}
+
+	if configuration.EnsureNamespace {
+		if err := EnsureNamespace(ctx, configuration.Namespace, cl); err != nil {
+			return fmt.Errorf("ensuring namespace exists: %v", err)
+		}
 	}
 
 	secret := &corev1.Secret{
@@ -113,6 +120,13 @@ func CreateRemoteKubeconfig(ctx context.Context, configuration *RemoteKubernetes
 	if err != nil {
 		return nil, fmt.Errorf("initializing client: %v", err)
 	}
+
+	if configuration.EnsureNamespace {
+		if err := EnsureNamespace(ctx, configuration.Namespace, cl); err != nil {
+			return nil, fmt.Errorf("ensuring namespace exists: %v", err)
+		}
+	}
+
 	_, err = controllerutil.CreateOrUpdate(ctx, cl, &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configuration.Name,
@@ -200,3 +214,12 @@ users:
   user:
     token: {{.Token}}
 `))
+
+func EnsureNamespace(ctx context.Context, namespace string, cl client.Client) error {
+	_, err := controllerutil.CreateOrUpdate(ctx, cl, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespace,
+		},
+	}, func() error { return nil })
+	return err
+}

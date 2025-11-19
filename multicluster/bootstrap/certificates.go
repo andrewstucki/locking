@@ -359,6 +359,12 @@ func CreateTLSSecret(ctx context.Context, ca *CACertificate, certificate *Certif
 		return fmt.Errorf("initializing client: %v", err)
 	}
 
+	if configuration.EnsureNamespace {
+		if err := EnsureNamespace(ctx, configuration.Namespace, cl); err != nil {
+			return fmt.Errorf("ensuring namespace exists: %v", err)
+		}
+	}
+
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configuration.Name + "-certificates",

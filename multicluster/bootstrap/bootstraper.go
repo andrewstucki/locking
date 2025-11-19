@@ -50,6 +50,7 @@ func (r RemoteConfiguration) FQDN(c BootstrapClusterConfiguration) (string, erro
 type BootstrapClusterConfiguration struct {
 	BootstrapTLS         bool
 	BootstrapKubeconfigs bool
+	EnsureNamespace      bool
 	OperatorNamespace    string
 	ServiceName          string
 	RemoteClusters       []RemoteConfiguration
@@ -70,10 +71,11 @@ func BootstrapKubernetesClusters(ctx context.Context, organization string, confi
 				return err
 			}
 			config, err := CreateRemoteKubeconfig(ctx, &RemoteKubernetesConfiguration{
-				ContextName: cluster.ContextName,
-				Namespace:   configuration.OperatorNamespace,
-				Name:        configuration.ServiceName,
-				APIServer:   address,
+				ContextName:     cluster.ContextName,
+				EnsureNamespace: configuration.EnsureNamespace,
+				Namespace:       configuration.OperatorNamespace,
+				Name:            configuration.ServiceName,
+				APIServer:       address,
 			})
 			if err != nil {
 				return err
@@ -99,9 +101,10 @@ func BootstrapKubernetesClusters(ctx context.Context, organization string, confi
 				kubeconfig := kubeconfigs[i]
 
 				if err := CreateKubeconfigSecret(ctx, kubeconfig, &RemoteKubernetesConfiguration{
-					ContextName: cluster.ContextName,
-					Namespace:   configuration.OperatorNamespace,
-					Name:        configuration.ServiceName + "-" + configuration.RemoteClusters[i].ContextName,
+					ContextName:     cluster.ContextName,
+					Namespace:       configuration.OperatorNamespace,
+					Name:            configuration.ServiceName + "-" + configuration.RemoteClusters[i].ContextName,
+					EnsureNamespace: configuration.EnsureNamespace,
 				}); err != nil {
 					return err
 				}
@@ -110,9 +113,10 @@ func BootstrapKubernetesClusters(ctx context.Context, organization string, confi
 		if configuration.BootstrapTLS {
 			certificate := certificates[i]
 			if err := CreateTLSSecret(ctx, caCertificate, certificate, &RemoteKubernetesConfiguration{
-				ContextName: cluster.ContextName,
-				Namespace:   configuration.OperatorNamespace,
-				Name:        configuration.ServiceName,
+				ContextName:     cluster.ContextName,
+				Namespace:       configuration.OperatorNamespace,
+				Name:            configuration.ServiceName,
+				EnsureNamespace: configuration.EnsureNamespace,
 			}); err != nil {
 				return err
 			}
