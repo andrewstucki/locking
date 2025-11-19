@@ -41,17 +41,20 @@ type RaftCluster struct {
 type RaftConfiguration struct {
 	Name              string
 	Address           string
-	CAFile            string
-	PrivateKeyFile    string
-	CertificateFile   string
-	Insecure          bool
-	Scheme            *runtime.Scheme
 	Peers             []RaftCluster
 	ElectionTimeout   time.Duration
 	HeartbeatInterval time.Duration
-	Logger            logr.Logger
-	Metrics           bool
-	RestConfig        *rest.Config
+
+	Scheme     *runtime.Scheme
+	Logger     logr.Logger
+	Metrics    bool
+	RestConfig *rest.Config
+
+	// the are only used when the Insecure flag is set to false
+	Insecure        bool
+	CAFile          string
+	PrivateKeyFile  string
+	CertificateFile string
 
 	// these are used when bootstrapping mode is enabled
 	Bootstrap           bool
