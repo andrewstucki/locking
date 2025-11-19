@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/andrewstucki/locking/kube"
 	"github.com/andrewstucki/locking/raft"
@@ -66,7 +67,12 @@ func (lm *LeaderManager) runLeaderRoutines(ctx context.Context) {
 					return
 				default:
 					if err != nil {
-						lm.logger.Error(err, "error encountered on leader routine, restarting")
+						lm.logger.Error(err, "error encountered on leader routine, restarting in 10 seconds")
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(10 * time.Second):
 					}
 				}
 			}

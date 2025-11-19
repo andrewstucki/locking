@@ -22,8 +22,7 @@ import (
 func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
 
-	logger := zerolog.New(os.Stderr)
-	logger = logger.With().Timestamp().Logger()
+	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
 	log := zerologr.New(&logger)
 	ctrl.SetLogger(log)
 
