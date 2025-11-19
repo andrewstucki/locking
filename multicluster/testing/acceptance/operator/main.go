@@ -95,6 +95,8 @@ func main() {
 		},
 	}
 
+	cmd.AddCommand(bootstrapCmd(log))
+
 	multicluster.AddRaftConfigurationFlags(cmd.Flags())
 
 	err := cmd.Execute()

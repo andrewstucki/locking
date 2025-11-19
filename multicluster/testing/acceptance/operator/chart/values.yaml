@@ -1,0 +1,6 @@
+image:
+  repository: local/operator
+  tag: dev
+
+node: ""
+peers: []

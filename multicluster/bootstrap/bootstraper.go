@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"strings"
 
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,7 +41,7 @@ func (r RemoteConfiguration) Address() (string, error) {
 
 func (r RemoteConfiguration) FQDN(c BootstrapClusterConfiguration) (string, error) {
 	if r.ServiceAddress != "" {
-		return r.ServiceAddress, nil
+		return strings.Split(r.ServiceAddress, ":")[0], nil
 	}
 
 	return c.ServiceName + "-" + r.ContextName, nil

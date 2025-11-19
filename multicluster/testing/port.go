@@ -11,7 +11,7 @@ func GetFreePorts(t *testing.T, n int) []int {
 	ports := make([]int, 0, n)
 	listeners := make([]net.Listener, 0, n)
 
-	for i := 0; i < n; i++ {
+	for range n {
 		l, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatalf("error getting free port: %v", err)

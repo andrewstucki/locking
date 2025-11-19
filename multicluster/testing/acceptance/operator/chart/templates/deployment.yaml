@@ -1,0 +1,59 @@
+
+{{- if (eq .Values.node "") }}{{- fail ".Values.node is required" }}{{- end }}
+{{- if (eq (len .Values.peers) 0) }}{{- fail ".Values.peers is required" }}{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: operator
+  template:
+    metadata:
+      labels:
+        app: operator
+    spec:
+      serviceAccountName: operator
+      containers:
+        - name: operator
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - name: https
+              containerPort: 9443
+          args:
+            - "--raft-node-name={{ .Values.node }}"
+            - "--raft-node-address=0.0.0.0:9443"
+            - "--raft-ca-file=/tls/ca.crt"
+            - "--raft-certificate-file=/tls/tls.crt"
+            - "--raft-private-key-file=/tls/tls.key"
+            {{- range $peer := .Values.peers }}
+            - "--raft-peers={{ $peer.name }}://{{ $peer.address }}:9443/config-{{ $peer.name }}/kubeconfig.yaml"
+            {{- end }}
+          volumeMounts:
+            {{- range $peer := .Values.peers }}
+            - name: "operator-{{ $peer.context }}-kubeconfig"
+              mountPath: "/config-{{ $peer.name }}"
+            {{- end }}
+            - name: "operator-certificates"
+              mountPath: "/tls"
+      volumes:
+        {{- range $peer := .Values.peers }}
+        - name: "operator-{{ $peer.context }}-kubeconfig"
+          secret:
+            secretName: "operator-{{ $peer.context }}-kubeconfig"
+            items:
+              - key: "kubeconfig.yaml"
+                path: "kubeconfig.yaml"
+        {{- end }}
+        - name: "operator-certificates"
+          secret:
+            secretName: "operator-certificates"
+            items:
+              - key: "ca.crt"
+                path: "ca.crt"
+              - key: "tls.crt"
+                path: "tls.crt"
+              - key: "tls.key"
+                path: "tls.key"

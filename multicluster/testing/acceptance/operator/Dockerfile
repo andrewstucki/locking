@@ -1,10 +1,10 @@
-FROM golang:1.25-alpine as builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /workspace
 COPY . .
 WORKDIR /workspace/multicluster/testing/acceptance/operator
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-s -w" -o manager main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-s -w" -o manager
 
 FROM gcr.io/distroless/static:nonroot
 
