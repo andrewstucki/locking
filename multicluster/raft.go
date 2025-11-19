@@ -193,12 +193,20 @@ func NewRaftRuntimeManager(config RaftConfiguration) (Manager, error) {
 
 	if config.Bootstrap {
 		raftConfig.Fetcher = raft.KubeconfigFetcherFn(func(ctx context.Context) ([]byte, error) {
-			return bootstrap.CreateRemoteKubeconfig(ctx, &bootstrap.RemoteKubernetesConfiguration{
+			data, err := bootstrap.CreateRemoteKubeconfig(ctx, &bootstrap.RemoteKubernetesConfiguration{
 				RESTConfig: restConfig,
 				APIServer:  config.KubernetesAPIServer,
 				Namespace:  config.KubeconfigNamespace,
 				Name:       config.KubeconfigName,
 			})
+
+			config.Logger.Info("generated kubeconfig", "kubeconfig", string(data))
+
+			if err != nil {
+				return nil, err
+			}
+
+			return data, nil
 		})
 	}
 
