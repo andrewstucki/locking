@@ -40,6 +40,27 @@ func newPeer(addr string, credentials credentials.TransportCredentials) (*peer, 
 	}, nil
 }
 
+func InsecureClientFor(config LockConfiguration, node LockerNode) (transportv1.TransportServiceClient, error) {
+	var err error
+	var credentials credentials.TransportCredentials
+
+	if config.Insecure {
+		credentials = insecure.NewCredentials()
+	} else {
+		credentials, err = clientTLSConfig(config.Certificate, config.PrivateKey, config.CA, true)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to initialize client credentials: %w", err)
+	}
+
+	conn, err := grpc.NewClient(node.Address, grpc.WithTransportCredentials(credentials))
+	if err != nil {
+		return nil, err
+	}
+	return transportv1.NewTransportServiceClient(conn), nil
+}
+
 func ClientFor(config LockConfiguration, node LockerNode) (transportv1.TransportServiceClient, error) {
 	var err error
 	var credentials credentials.TransportCredentials
@@ -286,7 +307,12 @@ func serverTLSConfig(certPEM, keyPEM, caPEM []byte) (credentials.TransportCreden
 	return credentials.NewTLS(tlsConfig), nil
 }
 
-func clientTLSConfig(certPEM, keyPEM, caPEM []byte) (credentials.TransportCredentials, error) {
+func clientTLSConfig(certPEM, keyPEM, caPEM []byte, insecure ...bool) (credentials.TransportCredentials, error) {
+	isInsecure := false
+	if len(insecure) > 0 {
+		isInsecure = insecure[0]
+	}
+
 	certificate, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load client certificate: %w", err)
@@ -298,8 +324,9 @@ func clientTLSConfig(certPEM, keyPEM, caPEM []byte) (credentials.TransportCreden
 	}
 
 	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{certificate},
-		RootCAs:      capool,
+		Certificates:       []tls.Certificate{certificate},
+		RootCAs:            capool,
+		InsecureSkipVerify: isInsecure,
 	}
 	return credentials.NewTLS(tlsConfig), nil
 }
