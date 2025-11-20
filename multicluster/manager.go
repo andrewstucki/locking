@@ -17,6 +17,7 @@ import (
 
 type Manager interface {
 	mcmanager.Manager
+	GetLeader() string
 	GetClusterNames() []string
 	// the context passed here, when canceled will stop the cluster
 	AddOrReplaceCluster(ctx context.Context, clusterName string, cl cluster.Cluster) error
@@ -26,6 +27,7 @@ type managerI struct {
 	mcmanager.Manager
 	runnable            *leaderRunnable
 	logger              logr.Logger
+	getLeader           func() string
 	getClusters         func() map[string]cluster.Cluster
 	addOrReplaceCluster func(ctx context.Context, clusterName string, cl cluster.Cluster) error
 }
@@ -47,7 +49,14 @@ func (m *managerI) GetClusterNames() []string {
 	return clusters
 }
 
-func newManager(logger logr.Logger, config *rest.Config, provider multicluster.Provider, restart chan struct{}, getClusters func() map[string]cluster.Cluster, addOrReplaceCluster func(ctx context.Context, clusterName string, cl cluster.Cluster) error, manager *locking.LeaderManager, opts manager.Options) (Manager, error) {
+func (m *managerI) GetLeader() string {
+	if m.getLeader == nil {
+		return ""
+	}
+	return m.getLeader()
+}
+
+func newManager(logger logr.Logger, config *rest.Config, provider multicluster.Provider, restart chan struct{}, getLeader func() string, getClusters func() map[string]cluster.Cluster, addOrReplaceCluster func(ctx context.Context, clusterName string, cl cluster.Cluster) error, manager *locking.LeaderManager, opts manager.Options) (Manager, error) {
 	mgr, err := mcmanager.New(config, provider, opts)
 	if err != nil {
 		return nil, err
@@ -64,7 +73,7 @@ func newManager(logger logr.Logger, config *rest.Config, provider multicluster.P
 	if err := mgr.Add(runnable); err != nil {
 		return nil, err
 	}
-	return &managerI{Manager: mgr, runnable: runnable, logger: logger, getClusters: getClusters, addOrReplaceCluster: addOrReplaceCluster}, nil
+	return &managerI{Manager: mgr, runnable: runnable, logger: logger, getLeader: getLeader, getClusters: getClusters, addOrReplaceCluster: addOrReplaceCluster}, nil
 }
 
 func (m *managerI) Add(r mcmanager.Runnable) error {

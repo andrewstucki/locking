@@ -52,6 +52,21 @@ func NewRaftLockManager(configuration raft.LockConfiguration) *LeaderManager {
 	return manager
 }
 
+func NewLeaderTrackingRaftLockManager(configuration raft.LockConfiguration, setLeader func(uint64)) *LeaderManager {
+	manager := &LeaderManager{}
+	manager.runner = func(ctx context.Context) error {
+		return raft.Run(ctx, configuration, &raft.LeaderCallbacks{
+			OnStartedLeading: manager.runLeaderRoutines,
+			OnStoppedLeading: func() {
+				manager.isLeader.Store(false)
+			},
+			SetLeader: setLeader,
+		})
+	}
+
+	return manager
+}
+
 func (lm *LeaderManager) runLeaderRoutines(ctx context.Context) {
 	lm.isLeader.Store(true)
 

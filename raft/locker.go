@@ -19,6 +19,7 @@ const (
 var discardLogger = &raft.DefaultLogger{Logger: log.New(io.Discard, "", 0)}
 
 type LeaderCallbacks struct {
+	SetLeader        func(leader uint64)
 	OnStartedLeading func(ctx context.Context)
 	OnStoppedLeading func()
 }
@@ -34,6 +35,7 @@ type LockConfiguration struct {
 	CA          []byte
 	PrivateKey  []byte
 	Certificate []byte
+	Meta        []byte
 	Peers       []LockerNode
 	Insecure    bool
 	Fetcher     KubeconfigFetcher
@@ -100,9 +102,9 @@ func Run(ctx context.Context, config LockConfiguration, callbacks *LeaderCallbac
 	var transport *grpcTransport
 	var err error
 	if config.Insecure {
-		transport, err = newInsecureGRPCTransport(config.Address, nodes, config.Fetcher)
+		transport, err = newInsecureGRPCTransport(config.Meta, config.Address, nodes, config.Fetcher)
 	} else {
-		transport, err = newGRPCTransport(config.Certificate, config.PrivateKey, config.CA, config.Address, nodes, config.Fetcher)
+		transport, err = newGRPCTransport(config.Meta, config.Certificate, config.PrivateKey, config.CA, config.Address, nodes, config.Fetcher)
 	}
 	if err != nil {
 		return err
@@ -212,11 +214,21 @@ func runRaft(ctx context.Context, transport *grpcTransport, config LockConfigura
 		case rd := <-node.Ready():
 			// Observe soft state changes for leadership
 			var nowLeader bool
+			var leader uint64
 			if rd.SoftState != nil {
-				nowLeader = rd.SoftState.Lead == config.ID || rd.SoftState.RaftState == raft.StateLeader
+				leader = rd.SoftState.Lead
+				nowLeader = leader == config.ID || rd.SoftState.RaftState == raft.StateLeader
 			} else {
 				status := node.Status()
-				nowLeader = status.Lead == config.ID || status.RaftState == raft.StateLeader
+				leader = status.Lead
+				nowLeader = leader == config.ID || status.RaftState == raft.StateLeader
+			}
+
+			transport.leader.Store(leader)
+			transport.isLeader.Store(nowLeader)
+
+			if callbacks != nil && callbacks.SetLeader != nil {
+				callbacks.SetLeader(leader)
 			}
 
 			if nowLeader != isLeader || !initialized {

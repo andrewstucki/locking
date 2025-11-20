@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"net/url"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/andrewstucki/locking"
@@ -43,6 +44,7 @@ type RaftConfiguration struct {
 	Peers             []RaftCluster
 	ElectionTimeout   time.Duration
 	HeartbeatInterval time.Duration
+	Meta              []byte
 
 	Scheme     *runtime.Scheme
 	Logger     logr.Logger
@@ -155,12 +157,15 @@ func NewRaftRuntimeManager(config RaftConfiguration) (Manager, error) {
 
 	config.Logger.V(0).Info("initializing raft-based runtime manager", "node", config.Name, "peers", peers, "peerAddresses", peerAddresses)
 	raftPeers := []raft.LockerNode{}
+	idsToNames := map[uint64]string{}
 	clusterProvider := clusters.New()
 	for _, peer := range config.Peers {
+		id := stringToHash(peer.Name)
 		raftPeers = append(raftPeers, raft.LockerNode{
-			ID:      stringToHash(peer.Name),
+			ID:      id,
 			Address: peer.Address,
 		})
+		idsToNames[id] = peer.Name
 
 		if peer.Name == config.Name {
 			continue
@@ -185,6 +190,7 @@ func NewRaftRuntimeManager(config RaftConfiguration) (Manager, error) {
 		ID:                stringToHash(config.Name),
 		Address:           config.Address,
 		Peers:             raftPeers,
+		Meta:              config.Meta,
 		Insecure:          config.Insecure,
 		ElectionTimeout:   config.ElectionTimeout,
 		HeartbeatInterval: config.HeartbeatInterval,
@@ -238,7 +244,10 @@ func NewRaftRuntimeManager(config RaftConfiguration) (Manager, error) {
 		}
 	}
 
-	lockManager := locking.NewRaftLockManager(raftConfig)
+	var currentLeader atomic.Uint64
+	lockManager := locking.NewLeaderTrackingRaftLockManager(raftConfig, func(leader uint64) {
+		currentLeader.Store(leader)
+	})
 
 	restart := make(chan struct{}, 1)
 
@@ -293,7 +302,9 @@ func NewRaftRuntimeManager(config RaftConfiguration) (Manager, error) {
 		}
 	}
 
-	manager, err := newManager(config.Logger, restConfig, clusterProvider, restart, func() map[string]cluster.Cluster {
+	manager, err := newManager(config.Logger, restConfig, clusterProvider, restart, func() string {
+		return idsToNames[currentLeader.Load()]
+	}, func() map[string]cluster.Cluster {
 		clusters := map[string]cluster.Cluster{}
 		for _, name := range clusterProvider.ClusterNames() {
 			if c, err := clusterProvider.Get(context.Background(), name); err == nil {

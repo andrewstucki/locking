@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	TransportService_Check_FullMethodName      = "/transport.v1.TransportService/Check"
 	TransportService_Send_FullMethodName       = "/transport.v1.TransportService/Send"
 	TransportService_Kubeconfig_FullMethodName = "/transport.v1.TransportService/Kubeconfig"
 )
@@ -27,6 +28,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type TransportServiceClient interface {
+	Check(ctx context.Context, in *CheckRequest, opts ...grpc.CallOption) (*CheckResponse, error)
 	Send(ctx context.Context, in *SendRequest, opts ...grpc.CallOption) (*SendResponse, error)
 	Kubeconfig(ctx context.Context, in *KubeconfigRequest, opts ...grpc.CallOption) (*KubeconfigResponse, error)
 }
@@ -37,6 +39,16 @@ type transportServiceClient struct {
 
 func NewTransportServiceClient(cc grpc.ClientConnInterface) TransportServiceClient {
 	return &transportServiceClient{cc}
+}
+
+func (c *transportServiceClient) Check(ctx context.Context, in *CheckRequest, opts ...grpc.CallOption) (*CheckResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckResponse)
+	err := c.cc.Invoke(ctx, TransportService_Check_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *transportServiceClient) Send(ctx context.Context, in *SendRequest, opts ...grpc.CallOption) (*SendResponse, error) {
@@ -63,6 +75,7 @@ func (c *transportServiceClient) Kubeconfig(ctx context.Context, in *KubeconfigR
 // All implementations must embed UnimplementedTransportServiceServer
 // for forward compatibility.
 type TransportServiceServer interface {
+	Check(context.Context, *CheckRequest) (*CheckResponse, error)
 	Send(context.Context, *SendRequest) (*SendResponse, error)
 	Kubeconfig(context.Context, *KubeconfigRequest) (*KubeconfigResponse, error)
 	mustEmbedUnimplementedTransportServiceServer()
@@ -75,6 +88,9 @@ type TransportServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedTransportServiceServer struct{}
 
+func (UnimplementedTransportServiceServer) Check(context.Context, *CheckRequest) (*CheckResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Check not implemented")
+}
 func (UnimplementedTransportServiceServer) Send(context.Context, *SendRequest) (*SendResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Send not implemented")
 }
@@ -100,6 +116,24 @@ func RegisterTransportServiceServer(s grpc.ServiceRegistrar, srv TransportServic
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&TransportService_ServiceDesc, srv)
+}
+
+func _TransportService_Check_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TransportServiceServer).Check(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TransportService_Check_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TransportServiceServer).Check(ctx, req.(*CheckRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _TransportService_Send_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -145,6 +179,10 @@ var TransportService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "transport.v1.TransportService",
 	HandlerType: (*TransportServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Check",
+			Handler:    _TransportService_Check_Handler,
+		},
 		{
 			MethodName: "Send",
 			Handler:    _TransportService_Send_Handler,

@@ -21,6 +21,110 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type CheckRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FromLeader    bool                   `protobuf:"varint,1,opt,name=fromLeader,proto3" json:"fromLeader,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckRequest) Reset() {
+	*x = CheckRequest{}
+	mi := &file_transport_v1_message_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckRequest) ProtoMessage() {}
+
+func (x *CheckRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_transport_v1_message_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckRequest.ProtoReflect.Descriptor instead.
+func (*CheckRequest) Descriptor() ([]byte, []int) {
+	return file_transport_v1_message_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *CheckRequest) GetFromLeader() bool {
+	if x != nil {
+		return x.FromLeader
+	}
+	return false
+}
+
+type CheckResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	HasLeader      bool                   `protobuf:"varint,1,opt,name=hasLeader,proto3" json:"hasLeader,omitempty"`
+	UnhealthyNodes []uint64               `protobuf:"varint,2,rep,packed,name=unhealthy_nodes,json=unhealthyNodes,proto3" json:"unhealthy_nodes,omitempty"`
+	Meta           []byte                 `protobuf:"bytes,3,opt,name=meta,proto3" json:"meta,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CheckResponse) Reset() {
+	*x = CheckResponse{}
+	mi := &file_transport_v1_message_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckResponse) ProtoMessage() {}
+
+func (x *CheckResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_transport_v1_message_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckResponse.ProtoReflect.Descriptor instead.
+func (*CheckResponse) Descriptor() ([]byte, []int) {
+	return file_transport_v1_message_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *CheckResponse) GetHasLeader() bool {
+	if x != nil {
+		return x.HasLeader
+	}
+	return false
+}
+
+func (x *CheckResponse) GetUnhealthyNodes() []uint64 {
+	if x != nil {
+		return x.UnhealthyNodes
+	}
+	return nil
+}
+
+func (x *CheckResponse) GetMeta() []byte {
+	if x != nil {
+		return x.Meta
+	}
+	return nil
+}
+
 type SendRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Payload       []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
@@ -30,7 +134,7 @@ type SendRequest struct {
 
 func (x *SendRequest) Reset() {
 	*x = SendRequest{}
-	mi := &file_transport_v1_message_proto_msgTypes[0]
+	mi := &file_transport_v1_message_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -42,7 +146,7 @@ func (x *SendRequest) String() string {
 func (*SendRequest) ProtoMessage() {}
 
 func (x *SendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_v1_message_proto_msgTypes[0]
+	mi := &file_transport_v1_message_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -55,7 +159,7 @@ func (x *SendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendRequest.ProtoReflect.Descriptor instead.
 func (*SendRequest) Descriptor() ([]byte, []int) {
-	return file_transport_v1_message_proto_rawDescGZIP(), []int{0}
+	return file_transport_v1_message_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SendRequest) GetPayload() []byte {
@@ -74,7 +178,7 @@ type SendResponse struct {
 
 func (x *SendResponse) Reset() {
 	*x = SendResponse{}
-	mi := &file_transport_v1_message_proto_msgTypes[1]
+	mi := &file_transport_v1_message_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -86,7 +190,7 @@ func (x *SendResponse) String() string {
 func (*SendResponse) ProtoMessage() {}
 
 func (x *SendResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_v1_message_proto_msgTypes[1]
+	mi := &file_transport_v1_message_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -99,7 +203,7 @@ func (x *SendResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendResponse.ProtoReflect.Descriptor instead.
 func (*SendResponse) Descriptor() ([]byte, []int) {
-	return file_transport_v1_message_proto_rawDescGZIP(), []int{1}
+	return file_transport_v1_message_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SendResponse) GetApplied() bool {
@@ -117,7 +221,7 @@ type KubeconfigRequest struct {
 
 func (x *KubeconfigRequest) Reset() {
 	*x = KubeconfigRequest{}
-	mi := &file_transport_v1_message_proto_msgTypes[2]
+	mi := &file_transport_v1_message_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -129,7 +233,7 @@ func (x *KubeconfigRequest) String() string {
 func (*KubeconfigRequest) ProtoMessage() {}
 
 func (x *KubeconfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_v1_message_proto_msgTypes[2]
+	mi := &file_transport_v1_message_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -142,7 +246,7 @@ func (x *KubeconfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KubeconfigRequest.ProtoReflect.Descriptor instead.
 func (*KubeconfigRequest) Descriptor() ([]byte, []int) {
-	return file_transport_v1_message_proto_rawDescGZIP(), []int{2}
+	return file_transport_v1_message_proto_rawDescGZIP(), []int{4}
 }
 
 type KubeconfigResponse struct {
@@ -154,7 +258,7 @@ type KubeconfigResponse struct {
 
 func (x *KubeconfigResponse) Reset() {
 	*x = KubeconfigResponse{}
-	mi := &file_transport_v1_message_proto_msgTypes[3]
+	mi := &file_transport_v1_message_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -166,7 +270,7 @@ func (x *KubeconfigResponse) String() string {
 func (*KubeconfigResponse) ProtoMessage() {}
 
 func (x *KubeconfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_v1_message_proto_msgTypes[3]
+	mi := &file_transport_v1_message_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -179,7 +283,7 @@ func (x *KubeconfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KubeconfigResponse.ProtoReflect.Descriptor instead.
 func (*KubeconfigResponse) Descriptor() ([]byte, []int) {
-	return file_transport_v1_message_proto_rawDescGZIP(), []int{3}
+	return file_transport_v1_message_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *KubeconfigResponse) GetPayload() []byte {
@@ -193,15 +297,24 @@ var File_transport_v1_message_proto protoreflect.FileDescriptor
 
 const file_transport_v1_message_proto_rawDesc = "" +
 	"\n" +
-	"\x1atransport/v1/message.proto\x12\ftransport.v1\"'\n" +
+	"\x1atransport/v1/message.proto\x12\ftransport.v1\".\n" +
+	"\fCheckRequest\x12\x1e\n" +
+	"\n" +
+	"fromLeader\x18\x01 \x01(\bR\n" +
+	"fromLeader\"j\n" +
+	"\rCheckResponse\x12\x1c\n" +
+	"\thasLeader\x18\x01 \x01(\bR\thasLeader\x12'\n" +
+	"\x0funhealthy_nodes\x18\x02 \x03(\x04R\x0eunhealthyNodes\x12\x12\n" +
+	"\x04meta\x18\x03 \x01(\fR\x04meta\"'\n" +
 	"\vSendRequest\x12\x18\n" +
 	"\apayload\x18\x01 \x01(\fR\apayload\"(\n" +
 	"\fSendResponse\x12\x18\n" +
 	"\aapplied\x18\x01 \x01(\bR\aapplied\"\x13\n" +
 	"\x11KubeconfigRequest\".\n" +
 	"\x12KubeconfigResponse\x12\x18\n" +
-	"\apayload\x18\x01 \x01(\fR\apayload2\xa2\x01\n" +
-	"\x10TransportService\x12=\n" +
+	"\apayload\x18\x01 \x01(\fR\apayload2\xe4\x01\n" +
+	"\x10TransportService\x12@\n" +
+	"\x05Check\x12\x1a.transport.v1.CheckRequest\x1a\x1b.transport.v1.CheckResponse\x12=\n" +
 	"\x04Send\x12\x19.transport.v1.SendRequest\x1a\x1a.transport.v1.SendResponse\x12O\n" +
 	"\n" +
 	"Kubeconfig\x12\x1f.transport.v1.KubeconfigRequest\x1a .transport.v1.KubeconfigResponseB\xba\x01\n" +
@@ -219,20 +332,24 @@ func file_transport_v1_message_proto_rawDescGZIP() []byte {
 	return file_transport_v1_message_proto_rawDescData
 }
 
-var file_transport_v1_message_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_transport_v1_message_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_transport_v1_message_proto_goTypes = []any{
-	(*SendRequest)(nil),        // 0: transport.v1.SendRequest
-	(*SendResponse)(nil),       // 1: transport.v1.SendResponse
-	(*KubeconfigRequest)(nil),  // 2: transport.v1.KubeconfigRequest
-	(*KubeconfigResponse)(nil), // 3: transport.v1.KubeconfigResponse
+	(*CheckRequest)(nil),       // 0: transport.v1.CheckRequest
+	(*CheckResponse)(nil),      // 1: transport.v1.CheckResponse
+	(*SendRequest)(nil),        // 2: transport.v1.SendRequest
+	(*SendResponse)(nil),       // 3: transport.v1.SendResponse
+	(*KubeconfigRequest)(nil),  // 4: transport.v1.KubeconfigRequest
+	(*KubeconfigResponse)(nil), // 5: transport.v1.KubeconfigResponse
 }
 var file_transport_v1_message_proto_depIdxs = []int32{
-	0, // 0: transport.v1.TransportService.Send:input_type -> transport.v1.SendRequest
-	2, // 1: transport.v1.TransportService.Kubeconfig:input_type -> transport.v1.KubeconfigRequest
-	1, // 2: transport.v1.TransportService.Send:output_type -> transport.v1.SendResponse
-	3, // 3: transport.v1.TransportService.Kubeconfig:output_type -> transport.v1.KubeconfigResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
+	0, // 0: transport.v1.TransportService.Check:input_type -> transport.v1.CheckRequest
+	2, // 1: transport.v1.TransportService.Send:input_type -> transport.v1.SendRequest
+	4, // 2: transport.v1.TransportService.Kubeconfig:input_type -> transport.v1.KubeconfigRequest
+	1, // 3: transport.v1.TransportService.Check:output_type -> transport.v1.CheckResponse
+	3, // 4: transport.v1.TransportService.Send:output_type -> transport.v1.SendResponse
+	5, // 5: transport.v1.TransportService.Kubeconfig:output_type -> transport.v1.KubeconfigResponse
+	3, // [3:6] is the sub-list for method output_type
+	0, // [0:3] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -249,7 +366,7 @@ func file_transport_v1_message_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_transport_v1_message_proto_rawDesc), len(file_transport_v1_message_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

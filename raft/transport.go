@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"go.etcd.io/raft/v3"
 	"go.etcd.io/raft/v3/raftpb"
@@ -73,6 +74,10 @@ func (fn KubeconfigFetcherFn) Fetch(ctx context.Context) ([]byte, error) {
 type grpcTransport struct {
 	addr  string
 	peers map[uint64]*peer
+	meta  []byte
+
+	leader   atomic.Uint64
+	isLeader atomic.Bool
 
 	node     raft.Node
 	nodeLock sync.RWMutex
@@ -87,7 +92,7 @@ type grpcTransport struct {
 	transportv1.UnimplementedTransportServiceServer
 }
 
-func newGRPCTransport(certPEM, keyPEM, caPEM []byte, addr string, peers map[uint64]string, fetcher KubeconfigFetcher) (*grpcTransport, error) {
+func newGRPCTransport(meta []byte, certPEM, keyPEM, caPEM []byte, addr string, peers map[uint64]string, fetcher KubeconfigFetcher) (*grpcTransport, error) {
 	serverCredentials, err := serverTLSConfig(certPEM, keyPEM, caPEM)
 	if err != nil {
 		return nil, fmt.Errorf("unable to initialize server credentials: %w", err)
@@ -107,6 +112,7 @@ func newGRPCTransport(certPEM, keyPEM, caPEM []byte, addr string, peers map[uint
 	}
 
 	return &grpcTransport{
+		meta:              meta,
 		addr:              addr,
 		peers:             initializedPeers,
 		serverCredentials: serverCredentials,
@@ -115,7 +121,7 @@ func newGRPCTransport(certPEM, keyPEM, caPEM []byte, addr string, peers map[uint
 	}, nil
 }
 
-func newInsecureGRPCTransport(addr string, peers map[uint64]string, fetcher KubeconfigFetcher) (*grpcTransport, error) {
+func newInsecureGRPCTransport(meta []byte, addr string, peers map[uint64]string, fetcher KubeconfigFetcher) (*grpcTransport, error) {
 	initializedPeers := make(map[uint64]*peer, len(peers))
 	for id, peer := range peers {
 		initialized, err := newPeer(peer, nil)
@@ -126,6 +132,7 @@ func newInsecureGRPCTransport(addr string, peers map[uint64]string, fetcher Kube
 	}
 
 	return &grpcTransport{
+		meta:              meta,
 		addr:              addr,
 		peers:             initializedPeers,
 		kubeconfigFetcher: fetcher,
@@ -176,6 +183,34 @@ func (t *grpcTransport) Send(ctx context.Context, req *transportv1.SendRequest) 
 		}
 	}
 	return &transportv1.SendResponse{Applied: false}, nil
+}
+
+func (t *grpcTransport) Check(ctx context.Context, req *transportv1.CheckRequest) (*transportv1.CheckResponse, error) {
+	leader := t.leader.Load()
+	isLeader := t.isLeader.Load()
+	if leader != 0 {
+		response := &transportv1.CheckResponse{HasLeader: true, Meta: t.meta}
+		if !req.FromLeader && isLeader {
+			for id, peer := range t.peers {
+				followerResp, err := peer.client.Check(ctx, &transportv1.CheckRequest{
+					FromLeader: true,
+				})
+				if err != nil || !followerResp.HasLeader {
+					response.UnhealthyNodes = append(response.UnhealthyNodes, id)
+				}
+			}
+		} else if !req.FromLeader {
+			peer, ok := t.peers[leader]
+			if !ok {
+				return &transportv1.CheckResponse{HasLeader: false, Meta: t.meta}, nil
+			}
+			return peer.client.Check(ctx, &transportv1.CheckRequest{})
+		}
+
+		return response, nil
+	}
+
+	return &transportv1.CheckResponse{HasLeader: false, Meta: t.meta}, nil
 }
 
 func (t *grpcTransport) Kubeconfig(ctx context.Context, req *transportv1.KubeconfigRequest) (*transportv1.KubeconfigResponse, error) {
